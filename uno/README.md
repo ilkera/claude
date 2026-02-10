@@ -22,12 +22,43 @@ A web-based implementation of the classic UNO card game. Play against an AI oppo
   - **Wild +4**: Next player draws 4 cards, choose a new color
 - First player to empty their hand wins
 
-## How to Play
+## Getting Started
 
-1. Open `index.html` in a web browser
-2. Click on cards in your hand to play them
-3. If no valid cards, click "Draw Card"
-4. When you have 1 card left, click "UNO!" to declare it
+### Download and Run Locally
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/ilkera/claude.git
+   cd claude/uno
+   ```
+
+2. Open the game in your browser:
+   ```bash
+   # macOS
+   open index.html
+
+   # Linux
+   xdg-open index.html
+
+   # Windows
+   start index.html
+   ```
+   Or simply double-click `index.html` in your file manager.
+
+3. (Optional) Install dev dependencies to run tests:
+   ```bash
+   npm install
+   npm test
+   ```
+
+No build step or server required — the game runs entirely in the browser from static files.
+
+### How to Play
+
+1. Click on cards in your hand to play them
+2. If no valid cards, click "Draw Card"
+3. When you have 1 card left, click "UNO!" to declare it
+4. Click "Catch!" if you think the AI forgot to call UNO
 5. Click "New Game" to restart
 
 ## Files
