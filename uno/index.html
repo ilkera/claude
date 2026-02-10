@@ -57,7 +57,8 @@
         </div>
 
         <div class="action-buttons">
-            <button onclick="gameState.callUno()">UNO!</button>
+            <button onclick="gameState.callUno()">🔴 UNO!</button>
+            <button onclick="gameState.catchUno()">🚨 Catch!</button>
             <button onclick="gameState.resetGame()" class="reset-btn">New Game</button>
         </div>
 
@@ -68,8 +69,28 @@
             <button class="color-btn blue" onclick="gameState.chooseColor('blue')">Blue</button>
             <button class="color-btn green" onclick="gameState.chooseColor('green')">Green</button>
         </div>
+
+        <div class="challenge-prompt" id="challengeContainer" style="display: none;">
+            <h3>🃏 Wild Draw Four played against you!</h3>
+            <p>Do you want to challenge? If the play was illegal, they draw 4 instead. If legal, you draw 6!</p>
+            <button class="challenge-btn" onclick="gameState.resolveChallenge(true)">⚔️ Challenge!</button>
+            <button class="accept-btn" onclick="gameState.resolveChallenge(false)">✋ Accept (Draw 4)</button>
+        </div>
+
+        <div class="score-display" id="scoreDisplay">
+            <h4>📊 Match Score (First to 500)</h4>
+            <p>Player 1: <span id="score1">0</span> | Player 2 (AI): <span id="score2">0</span></p>
+        </div>
+
+        <div class="debug-panel" style="margin-top: 20px;">
+            <button id="debugToggle" onclick="document.getElementById('debugContent').style.display = document.getElementById('debugContent').style.display === 'none' ? 'block' : 'none'; this.textContent = document.getElementById('debugContent').style.display === 'none' ? '▶ Debug Info' : '▼ Debug Info'" style="background: #e0e0e0; border: 1px solid #ccc; border-radius: 5px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: bold;">▶ Debug Info</button>
+            <div id="debugContent" style="display: none; padding: 10px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 0 0 5px 5px; font-size: 12px;">
+                <div id="debugInfo"></div>
+            </div>
+        </div>
     </div>
 
+    <script src="src/game-core.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

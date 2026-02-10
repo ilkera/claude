@@ -1,31 +1,16 @@
-// Import game logic (for Node/browser compatibility)
-const gameLogic = typeof module !== 'undefined' && module.require ? require('./src/game-logic') : window.gameLogic;
+// Import game-core (Node/browser compatible)
+var _gameCore = typeof module !== 'undefined' && module.require ? require('./src/game-core') : window.gameCore;
 
-// Card class
-class Card {
-    constructor(color, value) {
-        this.color = color;
-        this.value = value;
-    }
-
-    isWild() {
-        return this.color === 'wild';
-    }
-
-    canPlayOn(topCard, wildColor = null) {
-        if (this.isWild()) return true;
-        
-        const checkColor = wildColor || topCard.color;
-        return this.color === checkColor || this.value === topCard.value;
-    }
-
-    getHTML() {
-        let text = this.value;
-        if (this.isWild()) {
-            text = this.value === 'wild_draw' ? 'WILD\n+4' : 'WILD';
-        }
-        return `<div class="card ${this.color}" data-card="${this.color}-${this.value}">${text}</div>`;
-    }
+// Display-friendly value names for rendering
+var _DISPLAY_VALUES = {
+    'SKIP': 'SKIP', 'REVERSE': 'REV', 'DRAW_TWO': '+2',
+    'WILD': 'WILD', 'WILD_DRAW_FOUR': 'W+4'
+};
+function displayValue(card) {
+    return _DISPLAY_VALUES[card.value] || card.value;
+}
+function displayColor(card) {
+    return _gameCore.toDisplayColor(card.color) || (card.isWild() ? 'wild' : card.color);
 }
 
 // Game state management
@@ -42,53 +27,51 @@ const gameState = {
     gameOver: false,
     callUnoPlayed: false,
     awaitingColorChoice: false,
+    awaitingWildDrawFourSkip: false,
+    lastWildDrawFourLegal: true,
+    awaitingChallenge: false,
+    pendingWildDrawFourPlayer: null,
+    scores: { 'Player 1': 0, 'Player 2': 0 },
+    unoCalledByPlayer: {},
+    debugMode: true,
 
     // Initialize the game
     init() {
-        this.createDeck();
-        this.shuffleDeck();
+        this.deck = _gameCore.shuffleDeck(_gameCore.createDeck());
         this.dealCards();
         this.discardPile.push(this.deck.pop());
-        
-        // Make sure first card isn't a special card
-        while (this.isSpecialCard(this.discardPile[0])) {
-            this.deck.push(this.discardPile.pop());
-            this.shuffleDeck();
-            this.discardPile.push(this.deck.pop());
-        }
-        
+        this.handleStartCard();
         this.render();
     },
 
-    // Create standard UNO deck
-    createDeck() {
-        const colors = ['red', 'yellow', 'blue', 'green'];
-        const values = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'reverse', 'draw2'];
-        
-        // Number and action cards
-        for (let color of colors) {
-            for (let value of values) {
-                if (value === '0') {
-                    this.deck.push(new Card(color, value));
-                } else {
-                    this.deck.push(new Card(color, value));
-                    this.deck.push(new Card(color, value));
-                }
-            }
-        }
-        
-        // Wild cards
-        for (let i = 0; i < 4; i++) {
-            this.deck.push(new Card('wild', 'wild'));
-            this.deck.push(new Card('wild', 'wild_draw'));
-        }
-    },
+    // Handle the starting discard card per rules.yaml
+    handleStartCard() {
+        const startCard = this.discardPile[this.discardPile.length - 1];
 
-    // Shuffle deck using Fisher-Yates
-    shuffleDeck() {
-        for (let i = this.deck.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
+        if (startCard.value === 'WILD' || startCard.value === 'WILD_DRAW_FOUR') {
+            this.deck.push(this.discardPile.pop());
+            _gameCore.shuffleDeck(this.deck);
+            this.discardPile.push(this.deck.pop());
+            this.handleStartCard();
+        } else if (startCard.value === 'SKIP') {
+            document.getElementById('gameStatus').textContent = 'Start card is SKIP! Player 1 is skipped.';
+            this.nextTurn();
+        } else if (startCard.value === 'REVERSE') {
+            if (this.players.length === 2) {
+                document.getElementById('gameStatus').textContent = 'Start card is REVERSE! Player 1 is skipped.';
+                this.nextTurn();
+            } else {
+                this.direction *= -1;
+                document.getElementById('gameStatus').textContent = 'Start card is REVERSE! Direction reversed.';
+            }
+        } else if (startCard.value === 'DRAW_TWO') {
+            const firstPlayer = this.players[this.currentPlayerIndex];
+            for (let i = 0; i < 2; i++) {
+                if (this.deck.length === 0) this.reshuffleDeck();
+                firstPlayer.hand.push(this.deck.pop());
+            }
+            document.getElementById('gameStatus').textContent = `Start card is DRAW TWO! ${firstPlayer.name} draws 2 and is skipped.`;
+            this.nextTurn();
         }
     },
 
@@ -101,35 +84,28 @@ const gameState = {
         }
     },
 
-    // Check if card is a special card
-    isSpecialCard(card) {
-        return ['skip', 'reverse', 'draw2', 'wild', 'wild_draw'].includes(card.value);
-    },
-
     // Draw a card
     drawCard() {
         if (this.gameOver) return;
-        
+
         const currentPlayer = this.players[this.currentPlayerIndex];
-        
+
         if (this.deck.length === 0) {
             this.reshuffleDeck();
         }
-        
+
         const card = this.deck.pop();
         currentPlayer.hand.push(card);
-        
-        // Check if player can play the drawn card
+
         const topCard = this.discardPile[this.discardPile.length - 1];
         if (card.canPlayOn(topCard, this.wildColor)) {
             document.getElementById('gameStatus').textContent = 'Card drawn! You can play it if you want.';
-            // Return the drawn card so callers (like AI) can act on it
             this.render();
             return card;
         } else {
             this.nextTurn();
         }
-        
+
         this.render();
         return null;
     },
@@ -139,93 +115,121 @@ const gameState = {
         const topCard = this.discardPile.pop();
         this.deck = this.discardPile;
         this.discardPile = [topCard];
-        this.shuffleDeck();
+        _gameCore.shuffleDeck(this.deck);
     },
 
     // Play a card
     playCard(cardIndex) {
         if (this.gameOver) return;
-        
+
         const currentPlayer = this.players[this.currentPlayerIndex];
         const card = currentPlayer.hand[cardIndex];
         const topCard = this.discardPile[this.discardPile.length - 1];
-        
-        // Check if move is valid
+
         if (!card.canPlayOn(topCard, this.wildColor)) {
             alert('Invalid move! Card cannot be played.');
             return;
         }
-        
+
+        // WILD_DRAW_FOUR constraint: MUST_HAVE_NO_MATCHING_COLOR
+        if (card.value === 'WILD_DRAW_FOUR') {
+            const activeColor = this.wildColor || topCard.color;
+            const hasMatchingColor = currentPlayer.hand.some(
+                (c, i) => i !== cardIndex && c.color === activeColor
+            );
+            if (hasMatchingColor && currentPlayer.isHuman) {
+                alert('You cannot play Wild Draw Four when you have cards matching the current color!');
+                return;
+            }
+            this.lastWildDrawFourLegal = !hasMatchingColor;
+        }
+
         // Remove card from hand
         currentPlayer.hand.splice(cardIndex, 1);
         this.discardPile.push(card);
         this.wildColor = null;
-        
+
         // Handle special cards
-        if (card.value === 'draw2') {
+        if (card.value === 'DRAW_TWO') {
             this.drawCards(2);
-        } else if (card.value === 'wild_draw') {
-            // Use game logic to handle wild_draw for AI vs human
-            const logic = currentPlayer.isHuman 
-                ? gameLogic.handleHumanWildCard(true)
-                : gameLogic.handleAIWildCard(true, currentPlayer.hand, null);
-            
-            this.drawCards(logic.cardsForNext);
-            this.wildColor = logic.wildColor;
-            
+            this.currentPlayerIndex = (this.currentPlayerIndex + this.direction + this.players.length) % this.players.length;
+        } else if (card.value === 'WILD_DRAW_FOUR') {
+            this.pendingWildDrawFourPlayer = this.currentPlayerIndex;
+
             if (currentPlayer.isHuman) {
-                this.awaitingColorChoice = logic.awaitColorChoice;
+                this.awaitingColorChoice = true;
+                this.awaitingWildDrawFourSkip = true;
                 this.showColorPicker();
                 this.render();
                 return;
             } else {
-                this.nextTurn();
+                // AI auto-selects color
+                this.wildColor = _gameCore.chooseAutoColor(currentPlayer.hand);
+                this.awaitingChallenge = true;
+                document.getElementById('challengeContainer').style.display = 'block';
+                document.getElementById('gameStatus').textContent = 'AI played Wild Draw Four! Challenge or accept?';
                 this.render();
                 return;
             }
-        } else if (card.value === 'skip') {
-            this.nextTurn();
-        } else if (card.value === 'reverse') {
+        } else if (card.value === 'SKIP') {
+            this.currentPlayerIndex = (this.currentPlayerIndex + this.direction + this.players.length) % this.players.length;
+        } else if (card.value === 'REVERSE') {
             if (this.players.length === 2) {
-                this.nextTurn();
+                // 2-player: acts as SKIP
+                this.currentPlayerIndex = (this.currentPlayerIndex + this.direction + this.players.length) % this.players.length;
             } else {
                 this.direction *= -1;
             }
         } else if (card.isWild()) {
-            // Use game logic to handle wild for AI vs human
-            const logic = currentPlayer.isHuman 
-                ? gameLogic.handleHumanWildCard(false)
-                : gameLogic.handleAIWildCard(false, currentPlayer.hand, null);
-            
-            this.wildColor = logic.wildColor;
-            
             if (currentPlayer.isHuman) {
-                this.awaitingColorChoice = logic.awaitColorChoice;
+                this.awaitingColorChoice = true;
                 this.showColorPicker();
                 this.render();
                 return;
             } else {
-                // AI auto-selects; continue to turn advancement
+                this.wildColor = _gameCore.chooseAutoColor(currentPlayer.hand);
             }
         }
-        
+
         // Check for win
         if (currentPlayer.hand.length === 0) {
             this.endGame(currentPlayer.name);
             this.render();
             return;
         }
-        
+
         // Check for UNO
-        if (currentPlayer.hand.length === 1 && !this.callUnoPlayed) {
-            document.getElementById('gameStatus').textContent = `${currentPlayer.name} has UNO!`;
+        if (currentPlayer.hand.length === 1) {
+            if (!currentPlayer.isHuman) {
+                if (Math.random() < 0.9) {
+                    this.unoCalledByPlayer[this.currentPlayerIndex] = true;
+                    document.getElementById('gameStatus').textContent = `${currentPlayer.name} calls UNO!`;
+                } else {
+                    document.getElementById('gameStatus').textContent = `${currentPlayer.name} has UNO! Did they call it?`;
+                }
+            } else if (!this.unoCalledByPlayer[this.currentPlayerIndex]) {
+                document.getElementById('gameStatus').textContent = `${currentPlayer.name} has UNO!`;
+                if (Math.random() < 0.5) {
+                    setTimeout(() => {
+                        if (!this.unoCalledByPlayer[this.currentPlayerIndex] && currentPlayer.hand.length === 1) {
+                            for (let j = 0; j < 2; j++) {
+                                if (this.deck.length === 0) this.reshuffleDeck();
+                                currentPlayer.hand.push(this.deck.pop());
+                            }
+                            document.getElementById('gameStatus').textContent =
+                                `AI caught you not calling UNO! Draw 2 cards!`;
+                            this.render();
+                        }
+                    }, 2000);
+                }
+            }
         }
-        
+
         this.nextTurn();
         this.render();
     },
 
-    // Draw multiple cards
+    // Draw multiple cards for next player
     drawCards(count) {
         const nextPlayer = this.players[(this.currentPlayerIndex + this.direction + this.players.length) % this.players.length];
         for (let i = 0; i < count; i++) {
@@ -243,63 +247,192 @@ const gameState = {
 
     // Choose color for wild card
     chooseColor(color) {
-        // Use game logic to process the choice
-        const result = gameLogic.processColorChoice(color);
-        this.wildColor = result.wildColor;
-        this.awaitingColorChoice = result.awaitColorChoice;
-        
+        this.wildColor = _gameCore.toLogicColor(color);
+        this.awaitingColorChoice = false;
+
         document.getElementById('colorPickerContainer').style.display = 'none';
-        
-        // If we were waiting for the human to pick a color after playing a wild, advance the turn
-        if (result.shouldAdvanceTurn) {
+
+        if (this.awaitingWildDrawFourSkip) {
+            this.awaitingWildDrawFourSkip = false;
+            const aiChallenges = Math.random() < 0.3;
+            if (aiChallenges) {
+                document.getElementById('gameStatus').textContent = 'AI challenges your Wild Draw Four!';
+                setTimeout(() => this.resolveAIChallenge(), 1500);
+            } else {
+                this.drawCards(4);
+                this.nextTurn(); // Skip past AI
+                this.nextTurn(); // Back to human
+            }
+        } else {
             this.nextTurn();
         }
         this.render();
     },
 
+    // Resolve AI's challenge of human's WD4
+    resolveAIChallenge() {
+        const wasIllegal = !this.lastWildDrawFourLegal;
 
+        if (wasIllegal) {
+            // Human's WD4 was illegal — human draws 4
+            const human = this.players[0];
+            for (let i = 0; i < 4; i++) {
+                if (this.deck.length === 0) this.reshuffleDeck();
+                human.hand.push(this.deck.pop());
+            }
+            document.getElementById('gameStatus').textContent =
+                `Challenge successful! Your Wild Draw Four was illegal. You draw 4 cards!`;
+            this.nextTurn();
+        } else {
+            // Human's WD4 was legal — AI draws 6
+            const ai = this.players[1];
+            for (let i = 0; i < 6; i++) {
+                if (this.deck.length === 0) this.reshuffleDeck();
+                ai.hand.push(this.deck.pop());
+            }
+            document.getElementById('gameStatus').textContent =
+                `Challenge failed! AI draws 6 cards.`;
+            this.nextTurn(); // Skip AI
+            this.nextTurn(); // Back to human
+        }
+        this.render();
+    },
+
+    // Resolve human's challenge of AI's WD4
+    resolveChallenge(doChallenge) {
+        document.getElementById('challengeContainer').style.display = 'none';
+        this.awaitingChallenge = false;
+
+        if (doChallenge) {
+            const wasIllegal = !this.lastWildDrawFourLegal;
+
+            if (wasIllegal) {
+                // AI's WD4 was illegal — AI draws 4
+                const ai = this.players[this.pendingWildDrawFourPlayer];
+                for (let i = 0; i < 4; i++) {
+                    if (this.deck.length === 0) this.reshuffleDeck();
+                    ai.hand.push(this.deck.pop());
+                }
+                document.getElementById('gameStatus').textContent =
+                    `Challenge successful! AI's Wild Draw Four was illegal. AI draws 4 cards!`;
+                this.nextTurn();
+            } else {
+                // AI's WD4 was legal — human draws 6
+                const human = this.players[0];
+                for (let i = 0; i < 6; i++) {
+                    if (this.deck.length === 0) this.reshuffleDeck();
+                    human.hand.push(this.deck.pop());
+                }
+                document.getElementById('gameStatus').textContent =
+                    `Challenge failed! You draw 6 cards.`;
+                this.nextTurn(); // Skip human
+                this.nextTurn(); // Advance to AI
+            }
+        } else {
+            this.drawCards(4);
+            document.getElementById('gameStatus').textContent = 'You accepted. Drawing 4 cards and skipping your turn.';
+            this.nextTurn(); // Skip human
+            this.nextTurn(); // Advance to AI
+        }
+        this.pendingWildDrawFourPlayer = null;
+        this.render();
+    },
 
     // Call UNO
     callUno() {
         const currentPlayer = this.players[this.currentPlayerIndex];
-        if (currentPlayer.hand.length === 1) {
-            this.callUnoPlayed = true;
+        if (currentPlayer.hand.length <= 2 && currentPlayer.isHuman) {
+            this.unoCalledByPlayer[this.currentPlayerIndex] = true;
             document.getElementById('gameStatus').textContent = `${currentPlayer.name} called UNO!`;
         }
+    },
+
+    // Catch opponent not calling UNO
+    catchUno() {
+        for (let i = 0; i < this.players.length; i++) {
+            const player = this.players[i];
+            if (player.hand.length === 1 && !this.unoCalledByPlayer[i]) {
+                for (let j = 0; j < 2; j++) {
+                    if (this.deck.length === 0) this.reshuffleDeck();
+                    player.hand.push(this.deck.pop());
+                }
+                document.getElementById('gameStatus').textContent =
+                    `${player.name} was caught not calling UNO! Draws 2 penalty cards!`;
+                this.unoCalledByPlayer[i] = true;
+                this.render();
+                return;
+            }
+        }
+        document.getElementById('gameStatus').textContent = 'No one to catch!';
+    },
+
+    // Calculate AI's best move strategy
+    calculateAIStrategy() {
+        const aiPlayer = this.players[1];
+        const topCard = this.discardPile[this.discardPile.length - 1];
+
+        const playableCards = aiPlayer.hand
+            .map((card, index) => ({ card, index }))
+            .filter(({ card }) => card.canPlayOn(topCard, this.wildColor));
+
+        if (playableCards.length === 0) {
+            return { playableCount: 0, bestCard: null, bestCards: [], maxPriority: null, allCards: [] };
+        }
+
+        const priorities = playableCards.map(pc => this.getCardPriority(pc.card));
+        const maxPriority = Math.max(...priorities);
+        const bestCards = playableCards.filter((pc, idx) => priorities[idx] === maxPriority);
+
+        return {
+            playableCount: playableCards.length,
+            bestCard: bestCards[0],
+            bestCards: bestCards,
+            maxPriority: maxPriority,
+            allCards: playableCards.map((pc, idx) => ({
+                card: pc.card, index: pc.index, priority: priorities[idx]
+            }))
+        };
     },
 
     // Next turn
     nextTurn() {
         this.currentPlayerIndex = (this.currentPlayerIndex + this.direction + this.players.length) % this.players.length;
         this.callUnoPlayed = false;
-        
-        // AI turn
+        this.unoCalledByPlayer = {};
+
         if (!this.gameOver && !this.players[this.currentPlayerIndex].isHuman) {
             setTimeout(() => this.aiTurn(), 1500);
         }
     },
 
+    // AI card priority for strategic play
+    getCardPriority(card) {
+        if (card.value === 'DRAW_TWO') return 100;
+        if (card.value === 'SKIP') return 90;
+        if (card.value === 'REVERSE') return 80;
+        if (card.value === 'WILD_DRAW_FOUR') return 50;
+        if (card.value === 'WILD') return 40;
+        const numValue = parseInt(card.value);
+        if (!isNaN(numValue)) return 10 + numValue;
+        return 0;
+    },
+
     // AI turn logic
     aiTurn() {
+        const strategy = this.calculateAIStrategy();
         const aiPlayer = this.players[this.currentPlayerIndex];
         const topCard = this.discardPile[this.discardPile.length - 1];
-        
-        // Find playable cards
-        const playableCards = aiPlayer.hand
-            .map((card, index) => ({ card, index }))
-            .filter(({ card }) => card.canPlayOn(topCard, this.wildColor));
-        
-        if (playableCards.length === 0) {
-            // If AI draws a playable card, auto-play it; otherwise drawCard() will call nextTurn()
+
+        if (strategy.playableCount === 0) {
             const drawn = this.drawCard();
             if (drawn && drawn.canPlayOn(topCard, this.wildColor)) {
-                // drawn card was pushed to the end of AI hand
                 const idx = aiPlayer.hand.length - 1;
                 this.playCard(idx);
             }
+        } else if (strategy.playableCount === 1) {
+            this.playCard(strategy.bestCard.index);
         } else {
-            // Play a random card from playable cards
-            const selected = playableCards[Math.floor(Math.random() * playableCards.length)];
+            const selected = strategy.bestCards[Math.floor(Math.random() * strategy.bestCards.length)];
             this.playCard(selected.index);
         }
     },
@@ -310,7 +443,7 @@ const gameState = {
         document.getElementById('gameStatus').textContent = `🎉 ${winner} wins the game! 🎉`;
     },
 
-    // Reset game
+    // Reset game (new round)
     resetGame() {
         this.deck = [];
         this.discardPile = [];
@@ -320,8 +453,21 @@ const gameState = {
         this.wildColor = null;
         this.gameOver = false;
         this.callUnoPlayed = false;
+        this.awaitingWildDrawFourSkip = false;
+        this.awaitingChallenge = false;
+        this.lastWildDrawFourLegal = true;
+        this.pendingWildDrawFourPlayer = null;
+        this.unoCalledByPlayer = {};
         document.getElementById('colorPickerContainer').style.display = 'none';
+        document.getElementById('challengeContainer').style.display = 'none';
         this.init();
+    },
+
+    // Full reset (new match — resets scores)
+    resetMatch() {
+        this.scores = { 'Player 1': 0, 'Player 2': 0 };
+        this.updateScoreDisplay();
+        this.resetGame();
     },
 
     // Render game state
@@ -330,19 +476,22 @@ const gameState = {
         this.updatePlayerHand();
         this.updatePlayerInfo();
         this.updateGameInfo();
+        if (this.debugMode) {
+            this.updateDebugInfo();
+        }
     },
 
     // Update game board
     updateBoard() {
         const topCard = this.discardPile[this.discardPile.length - 1];
         const discardPile = document.getElementById('discardPile');
-        
-        let cardHTML = `<div class="card ${topCard.color}" style="color: white;">${topCard.value}</div>`;
+
+        let cardHTML = `<div class="card ${displayColor(topCard)}" style="color: white;">${displayValue(topCard)}</div>`;
         if (this.wildColor) {
-            cardHTML = `<div class="card ${this.wildColor}" style="color: white;">WILD</div>`;
+            cardHTML = `<div class="card ${_gameCore.toDisplayColor(this.wildColor)}" style="color: white;">WILD</div>`;
         }
         discardPile.innerHTML = cardHTML;
-        
+
         document.getElementById('deckCount').textContent = `${this.deck.length} cards`;
     },
 
@@ -350,12 +499,13 @@ const gameState = {
     updatePlayerHand() {
         const hand = document.getElementById('playerHand');
         const currentPlayer = this.players[0];
-        
+        const topCard = this.discardPile[this.discardPile.length - 1];
+
         hand.innerHTML = currentPlayer.hand
             .map((card, index) => {
-                const playable = card.canPlayOn(this.discardPile[this.discardPile.length - 1], this.wildColor);
-                const classes = `${card.color} ${!playable ? 'invalid' : ''}`;
-                return `<div class="card ${classes}" onclick="if (${this.currentPlayerIndex} === 0) gameState.playCard(${index})">${card.value}</div>`;
+                const playable = card.canPlayOn(topCard, this.wildColor);
+                const classes = `${displayColor(card)} ${!playable ? 'invalid' : ''}`;
+                return `<div class="card ${classes}" onclick="if (${this.currentPlayerIndex} === 0) gameState.playCard(${index})">${displayValue(card)}</div>`;
             })
             .join('');
     },
@@ -364,10 +514,10 @@ const gameState = {
     updatePlayerInfo() {
         const p1 = this.players[0];
         const p2 = this.players[1];
-        
+
         document.getElementById('p1HandSize').textContent = `Hand: ${p1.hand.length} cards`;
         document.getElementById('p2HandSize').textContent = `Hand: ${p2.hand.length} cards`;
-        
+
         document.getElementById('p1Uno').textContent = p1.hand.length === 1 ? '🔴 UNO!' : '';
         document.getElementById('p2Uno').textContent = p2.hand.length === 1 ? '🔴 UNO!' : '';
     },
@@ -376,12 +526,78 @@ const gameState = {
     updateGameInfo() {
         const currentPlayer = this.players[this.currentPlayerIndex];
         document.getElementById('currentPlayer').textContent = currentPlayer.name;
-        
+
         if (!this.gameOver && this.currentPlayerIndex === 1) {
             document.getElementById('gameStatus').textContent = 'AI is thinking...';
         } else if (!this.gameOver) {
             document.getElementById('gameStatus').textContent = 'Your turn! Play a card or draw.';
         }
+    },
+
+    // Debug info: Show AI's hand and strategy
+    updateDebugInfo() {
+        const debugContainer = document.getElementById('debugInfo');
+        if (!debugContainer) return;
+
+        const aiPlayer = this.players[1];
+        const topCard = this.discardPile[this.discardPile.length - 1];
+        const strategy = this.calculateAIStrategy();
+
+        let debugHTML = `
+            <h4>🐛 DEBUG INFO</h4>
+            <p><strong>AI Hand (${aiPlayer.hand.length} cards):</strong></p>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+        `;
+
+        aiPlayer.hand.forEach((card, idx) => {
+            const isPlayable = card.canPlayOn(topCard, this.wildColor);
+            const borderStyle = isPlayable ? 'border: 3px solid lime;' : 'border: 1px solid gray;';
+            const priority = isPlayable ? this.getCardPriority(card) : '-';
+            debugHTML += `<div class="card ${displayColor(card)}" style="${borderStyle}; position: relative;" title="Priority: ${priority}"><small>${displayValue(card)}</small></div>`;
+        });
+
+        debugHTML += `
+            </div>
+            <p><strong>Playable Cards:</strong> ${strategy.playableCount} / ${aiPlayer.hand.length}</p>
+        `;
+
+        if (strategy.playableCount > 0) {
+            debugHTML += `
+                <div style="background: #e8f5e9; padding: 8px; border-radius: 4px; margin: 8px 0;">
+                    <p style="margin: 5px 0;"><strong>📊 AI Strategy:</strong></p>
+                    <p style="margin: 5px 0; font-size: 12px;"><strong>Card Priorities:</strong></p>
+                    <ul style="margin: 5px 0; padding-left: 20px; font-size: 12px;">
+            `;
+
+            strategy.allCards.forEach(ac => {
+                const isBest = ac.priority === strategy.maxPriority;
+                const bestMarker = isBest ? '⭐ ' : '';
+                debugHTML += `<li>${bestMarker}${displayColor(ac.card)} ${displayValue(ac.card)}: ${ac.priority}</li>`;
+            });
+
+            debugHTML += `
+                    </ul>
+                    <p style="margin: 5px 0; font-size: 12px;"><strong>Best Choice:</strong> ${strategy.bestCards.length} option(s) with priority ${strategy.maxPriority}</p>
+                    <ul style="margin: 5px 0; padding-left: 20px; font-size: 12px;">
+            `;
+
+            strategy.bestCards.forEach(bc => {
+                debugHTML += `<li>👉 ${displayColor(bc.card)} ${displayValue(bc.card)}</li>`;
+            });
+
+            debugHTML += `
+                    </ul>
+                </div>
+            `;
+        }
+
+        debugHTML += `
+            <p><strong>Top Card:</strong> ${displayColor(topCard)} ${displayValue(topCard)}</p>
+            <p><strong>Active Color:</strong> ${this.wildColor ? _gameCore.toDisplayColor(this.wildColor) : 'none'}</p>
+            <p><strong>Current Player:</strong> ${this.players[this.currentPlayerIndex].name}</p>
+        `;
+
+        debugContainer.innerHTML = debugHTML;
     }
 };
 
