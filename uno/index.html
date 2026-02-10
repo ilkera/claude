@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uno Card Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 UNO Game</h1>
+        
+        <div class="game-info">
+            <div class="info-item">
+                <p class="label">Current Player:</p>
+                <p class="value" id="currentPlayer">Player 1</p>
+            </div>
+            <div class="info-item">
+                <p class="label">Status:</p>
+                <p class="value" id="gameStatus">Game in progress...</p>
+            </div>
+        </div>
+
+        <div class="game-board">
+            <div class="discard-pile">
+                <h3>Discard Pile</h3>
+                <div id="discardPile" class="card-display">
+                    <div class="card" id="topCard"></div>
+                </div>
+            </div>
+
+            <div class="draw-pile">
+                <h3>Draw Pile</h3>
+                <button class="card card-back" id="drawBtn" onclick="gameState.drawCard()">
+                    Draw Card
+                </button>
+                <p id="deckCount">52 cards</p>
+            </div>
+        </div>
+
+        <div class="players-info">
+            <div class="player-status" id="player1Status">
+                <h4>Player 1 (You)</h4>
+                <p id="p1HandSize">Hand: 7 cards</p>
+                <p class="uno-status" id="p1Uno"></p>
+            </div>
+            <div class="player-status" id="player2Status">
+                <h4>Player 2 (AI)</h4>
+                <p id="p2HandSize">Hand: 7 cards</p>
+                <p class="uno-status" id="p2Uno"></p>
+            </div>
+        </div>
+
+        <div class="player-hand">
+            <h3>Your Hand</h3>
+            <div id="playerHand" class="hand"></div>
+        </div>
+
+        <div class="action-buttons">
+            <button onclick="gameState.callUno()">UNO!</button>
+            <button onclick="gameState.resetGame()" class="reset-btn">New Game</button>
+        </div>
+
+        <div class="color-picker" id="colorPickerContainer" style="display: none;">
+            <h3>Choose a color:</h3>
+            <button class="color-btn red" onclick="gameState.chooseColor('red')">Red</button>
+            <button class="color-btn yellow" onclick="gameState.chooseColor('yellow')">Yellow</button>
+            <button class="color-btn blue" onclick="gameState.chooseColor('blue')">Blue</button>
+            <button class="color-btn green" onclick="gameState.chooseColor('green')">Green</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
