@@ -40,7 +40,12 @@ class PostAnalyzer:
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = response.content[0].text
+            raw = response.content[0].text.strip()
+            # Strip markdown code fences if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1]  # remove opening ```json
+                raw = raw.rsplit("```", 1)[0]  # remove closing ```
+                raw = raw.strip()
             data = json.loads(raw)
 
             relevance = float(data["relevance_score"])

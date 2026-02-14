@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from twilio.rest import Client
 
@@ -29,7 +30,7 @@ class WhatsAppNotifier:
         return message.sid
 
     def _format_message(self, analysis: Analysis) -> str:
-        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        now = datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M ET")
         tags = " ".join(f"#{t}" for t in analysis.topics)
         bullets = "\n".join(f"- {s}" for s in analysis.summary)
         relevance_pct = int(analysis.relevance_score * 100)
