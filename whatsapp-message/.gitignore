@@ -1,0 +1,6 @@
+.env
+seen_posts.json
+__pycache__/
+*.pyc
+monitor.log
+.pytest_cache/
