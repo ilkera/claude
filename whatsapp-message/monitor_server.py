@@ -7,7 +7,7 @@ import json
 import os
 import signal
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
@@ -73,6 +73,11 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
   <div class="stat"><div class="label">Polls (24h)</div><div class="value" id="pollCount">--</div></div>
   <div class="stat"><div class="label">Posts Found (24h)</div><div class="value" id="postsFound">--</div></div>
   <div class="stat"><div class="label">Notifications (24h)</div><div class="value" id="notifCount">--</div></div>
+  <div class="stat"><div class="label">Success Rate (24h)</div><div class="value" id="successRate">--</div></div>
+</div>
+<div id="chartContainer" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:16px">
+  <div style="font-size:0.85em;color:#8b949e;margin-bottom:8px">Poll Success Rate (24h)</div>
+  <svg id="successChart" width="100%" height="180" viewBox="0 0 720 180" preserveAspectRatio="none"></svg>
 </div>
 <div class="events" id="eventList"></div>
 <div class="refresh-note">Auto-refreshes every 30s</div>
@@ -98,11 +103,35 @@ function eventDetails(e){
     default:return '';
   }
 }
+function renderChart(data){
+  const svg=document.getElementById('successChart');
+  const w=720,h=180,pad=25,barW=Math.floor((w-pad*2)/24)-2;
+  let html=`<rect x="0" y="0" width="${w}" height="${h}" fill="none"/>`;
+  // Y-axis labels
+  for(let p of [0,50,100]){
+    const y=pad+(100-p)/100*(h-pad*2);
+    html+=`<text x="${pad-4}" y="${y+4}" text-anchor="end" fill="#484f58" font-size="10">${p}%</text>`;
+    html+=`<line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="#21262d" stroke-width="1"/>`;
+  }
+  data.forEach((d,i)=>{
+    const x=pad+i*((w-pad*2)/24)+1;
+    const barH=d.rate!==null?d.rate*(h-pad*2):0;
+    const y=pad+(h-pad*2)-barH;
+    const color=d.rate===null?'#21262d':d.rate>=0.8?'#3fb950':d.rate>=0.5?'#d29922':'#f85149';
+    html+=`<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${color}" rx="2"/>`;
+    if(i%3===0){
+      const label=new Date(d.hour).toLocaleTimeString([],{hour:'2-digit',hour12:false});
+      html+=`<text x="${x+barW/2}" y="${h-2}" text-anchor="middle" fill="#484f58" font-size="9">${label}</text>`;
+    }
+  });
+  svg.innerHTML=html;
+}
 async function refresh(){
   try{
-    const [r,sr]=await Promise.all([fetch('/api/events?limit=500'),fetch('/api/status')]);
+    const [r,sr,pr]=await Promise.all([fetch('/api/events?limit=500'),fetch('/api/status'),fetch('/api/poll-success-rate')]);
     const events=await r.json();
     const status=await sr.json();
+    const pollData=await pr.json();
     const pDot=document.getElementById('processDot');
     const pTxt=document.getElementById('processText');
     if(status.running){
@@ -143,6 +172,12 @@ async function refresh(){
     document.getElementById('pollCount').textContent=recent.filter(e=>e.event_type==='poll_end').length;
     document.getElementById('postsFound').textContent=recent.filter(e=>e.event_type==='poll_end').reduce((a,e)=>a+(e.posts_found||0),0);
     document.getElementById('notifCount').textContent=recent.filter(e=>e.event_type==='notification_sent').length;
+    // Success rate
+    const totalSuccess=pollData.reduce((a,d)=>a+d.success,0);
+    const totalPolls=pollData.reduce((a,d)=>a+d.total,0);
+    const srEl=document.getElementById('successRate');
+    srEl.textContent=totalPolls>0?Math.round(totalSuccess/totalPolls*100)+'%':'--';
+    renderChart(pollData);
     // Event list
     const list=document.getElementById('eventList');
     list.innerHTML=events.slice(0,200).map(e=>`<div class="event">
@@ -160,8 +195,8 @@ setInterval(refresh,30000);
 """
 
 
-def read_events(limit: int = 200) -> list[dict]:
-    """Read events from the JSONL file, return newest first."""
+def read_all_events() -> list[dict]:
+    """Read all events from the JSONL file in chronological order."""
     if not os.path.exists(EVENTS_FILE):
         return []
     events = []
@@ -173,8 +208,67 @@ def read_events(limit: int = 200) -> list[dict]:
                     events.append(json.loads(line))
                 except json.JSONDecodeError:
                     continue
+    return events
+
+
+def read_events(limit: int = 200) -> list[dict]:
+    """Read events from the JSONL file, return newest first."""
+    events = read_all_events()
     events.reverse()
     return events[:limit]
+
+
+def poll_success_rate() -> list[dict]:
+    """Compute hourly poll success rates for the last 24 hours."""
+    now = datetime.now(timezone.utc)
+    # Start of the current hour
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
+    # Generate 24 hourly slots (oldest first)
+    hours = []
+    for i in range(23, -1, -1):
+        hours.append(current_hour - timedelta(hours=i))
+
+    # Bucket events
+    buckets: dict[str, dict] = {}
+    for h in hours:
+        key = h.isoformat().replace("+00:00", "Z")
+        buckets[key] = {"hour": key, "success": 0, "failed": 0}
+
+    cutoff = hours[0]
+    for event in read_all_events():
+        ts_str = event.get("timestamp", "")
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            continue
+        if ts < cutoff:
+            continue
+        event_type = event.get("event_type")
+        if event_type not in ("poll_end", "error"):
+            continue
+        # Find the bucket
+        hour_key = ts.replace(minute=0, second=0, microsecond=0)
+        key = hour_key.isoformat().replace("+00:00", "Z")
+        if key in buckets:
+            if event_type == "poll_end":
+                buckets[key]["success"] += 1
+            else:
+                buckets[key]["failed"] += 1
+
+    result = []
+    for h in hours:
+        key = h.isoformat().replace("+00:00", "Z")
+        b = buckets[key]
+        total = b["success"] + b["failed"]
+        rate = b["success"] / total if total > 0 else None
+        result.append({
+            "hour": key,
+            "success": b["success"],
+            "failed": b["failed"],
+            "total": total,
+            "rate": rate,
+        })
+    return result
 
 
 class DashboardHandler(SimpleHTTPRequestHandler):
@@ -196,6 +290,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 except (ValueError, FileNotFoundError):
                     pass
             data = {"running": running, "pid": pid}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode())
+        elif parsed.path == "/api/poll-success-rate":
+            data = poll_success_rate()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
