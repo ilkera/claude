@@ -60,3 +60,21 @@ python main.py
 - **State persistence**: `seen_posts.json` tracks post IDs across restarts. Capped at 5000 entries.
 - **Error resilience**: Each poll cycle is wrapped in try/except - failures are logged and the loop continues.
 - **WhatsApp sandbox**: Twilio sandbox requires recipients to send a join code to `+14155238886` before receiving messages.
+
+## Monitoring
+
+An independent monitoring dashboard runs as a separate process from the main service.
+
+| File | Responsibility |
+|---|---|
+| `event_logger.py` | JSONL event writer, appends to `events_log.json`, auto-rotates at 10,000 lines |
+| `monitor_server.py` | Stdlib HTTP server on port 8080, serves HTML dashboard + `/api/events` JSON endpoint |
+
+**Events logged:** `service_start`, `service_stop`, `poll_start`, `poll_end`, `notification_sent`, `notification_skipped`, `error`
+
+**Running the dashboard:**
+```bash
+python monitor_server.py   # open http://localhost:8080
+```
+
+The dashboard shows service status (Online/Degraded/Down/Stopped), uptime, 24h stats, and a scrollable event list. It auto-refreshes every 30 seconds and works even when the main service is stopped.

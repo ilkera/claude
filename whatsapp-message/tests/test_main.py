@@ -54,11 +54,17 @@ def parser():
     return PostParser()
 
 
+@pytest.fixture
+def event_logger(tmp_path):
+    from event_logger import EventLogger
+    return EventLogger(str(tmp_path / "events.jsonl"))
+
+
 @pytest.mark.asyncio
 async def test_full_cycle_with_new_posts(
-    mock_scraper, parser, mock_analyzer, mock_notifier, state_manager
+    mock_scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger
 ):
-    await poll_cycle(mock_scraper, parser, mock_analyzer, mock_notifier, state_manager)
+    await poll_cycle(mock_scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger)
 
     mock_scraper.fetch_posts.assert_called_once()
     mock_analyzer.analyze.assert_called_once()
@@ -67,37 +73,37 @@ async def test_full_cycle_with_new_posts(
 
 @pytest.mark.asyncio
 async def test_no_new_posts(
-    mock_scraper, parser, mock_analyzer, mock_notifier, state_manager
+    mock_scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger
 ):
     # First cycle sees all posts
-    await poll_cycle(mock_scraper, parser, mock_analyzer, mock_notifier, state_manager)
+    await poll_cycle(mock_scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger)
 
     mock_analyzer.reset_mock()
     mock_notifier.reset_mock()
 
     # Second cycle - no new posts
-    await poll_cycle(mock_scraper, parser, mock_analyzer, mock_notifier, state_manager)
+    await poll_cycle(mock_scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger)
 
     mock_analyzer.analyze.assert_not_called()
     mock_notifier.send.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_scraper_failure(parser, mock_analyzer, mock_notifier, state_manager):
+async def test_scraper_failure(parser, mock_analyzer, mock_notifier, state_manager, event_logger):
     scraper = AsyncMock()
     scraper.fetch_posts.side_effect = RuntimeError("Browser crashed")
 
     with pytest.raises(RuntimeError):
-        await poll_cycle(scraper, parser, mock_analyzer, mock_notifier, state_manager)
+        await poll_cycle(scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger)
 
 
 @pytest.mark.asyncio
 async def test_analysis_below_threshold(
-    mock_scraper, parser, mock_notifier, state_manager
+    mock_scraper, parser, mock_notifier, state_manager, event_logger
 ):
     analyzer = MagicMock()
     analyzer.analyze.return_value = None  # Below threshold
 
-    await poll_cycle(mock_scraper, parser, analyzer, mock_notifier, state_manager)
+    await poll_cycle(mock_scraper, parser, analyzer, mock_notifier, state_manager, event_logger)
 
     mock_notifier.send.assert_not_called()
