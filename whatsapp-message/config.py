@@ -26,10 +26,14 @@ class Config:
         "https://rollcall.com/factbase/trump/topic/social",
     )
     poll_interval_seconds: int = int(os.getenv("POLL_INTERVAL_SECONDS", "420"))
-    page_load_timeout_ms: int = int(os.getenv("PAGE_LOAD_TIMEOUT_MS", "30000"))
+    page_load_timeout_ms: int = int(os.getenv("PAGE_LOAD_TIMEOUT_MS", "60000"))
 
     # State
     state_file: str = os.getenv("STATE_FILE", "seen_posts.json")
 
     # Filter
     min_relevance_score: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.3"))
+
+    # Monitoring
+    events_file: str = os.getenv("EVENTS_FILE", "events_log.json")
+    monitor_port: int = int(os.getenv("MONITOR_PORT", "8080"))
