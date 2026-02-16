@@ -152,13 +152,13 @@ async function refresh(){
       const lastTime=new Date(last.timestamp).getTime();
       const errorsLastHour=events.filter(e=>e.event_type==='error'&&new Date(e.timestamp).getTime()>h1).length;
       if(last.event_type==='service_stop'){
-        dot.className='dot red';txt.textContent='Stopped';
+        dot.className='dot red';txt.textContent='Stopped';txt.title='Last event was service_stop';
       }else if(now-lastTime>900000){
-        dot.className='dot red';txt.textContent='Down';
+        dot.className='dot red';txt.textContent='Down';txt.title='No events in the last 15 minutes';
       }else if(errorsLastHour>=3){
-        dot.className='dot yellow';txt.textContent='Degraded';
+        dot.className='dot yellow';txt.textContent='Degraded ('+errorsLastHour+' errors/hr)';txt.title='3+ errors in the last hour';
       }else{
-        dot.className='dot green';txt.textContent='Online';
+        dot.className='dot green';txt.textContent='Online';txt.title='Service is running normally';
       }
     }
     // Uptime
