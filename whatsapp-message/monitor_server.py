@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Independent monitoring dashboard for the WhatsApp notifier service."""
+"""Independent monitoring dashboard for the WhatsApp notifier service.
+
+Serves an HTML dashboard on port 8080 with collapsible daily event groups.
+"""
 
 from __future__ import annotations
 
