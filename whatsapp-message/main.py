@@ -37,7 +37,8 @@ async def poll_cycle(
     event_logger.log("poll_start")
     t0 = time.monotonic()
 
-    raw_posts = await scraper.fetch_posts()
+    result = await scraper.fetch_posts()
+    raw_posts, source = result.posts, result.source
     posts = parser.parse(raw_posts)
 
     new_posts = state.filter_new(posts)
@@ -45,7 +46,7 @@ async def poll_cycle(
         logger.info("No new posts found")
         duration_ms = int((time.monotonic() - t0) * 1000)
         event_logger.log(
-            "poll_end", posts_found=len(posts), new_posts=0, duration_ms=duration_ms
+            "poll_end", posts_found=len(posts), new_posts=0, duration_ms=duration_ms, source=source
         )
         event_logger.log("notification_skipped", reason="no_new_posts")
         return
@@ -74,6 +75,7 @@ async def poll_cycle(
         posts_found=len(posts),
         new_posts=len(new_posts),
         duration_ms=duration_ms,
+        source=source,
     )
 
 
@@ -104,6 +106,7 @@ async def main() -> None:
                     "error",
                     error_type=sys.exc_info()[0].__name__ if sys.exc_info()[0] else "Unknown",
                     message=str(sys.exc_info()[1]),
+                    source="unknown",
                 )
             logger.info("Sleeping %d seconds", config.poll_interval_seconds)
             await asyncio.sleep(config.poll_interval_seconds)

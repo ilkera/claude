@@ -75,7 +75,7 @@ def test_returns_24_hourly_slots():
         result = poll_success_rate()
     assert len(result) == 24
     for slot in result:
-        assert set(slot.keys()) == {"hour", "success", "failed", "total", "rate"}
+        assert set(slot.keys()) == {"hour", "success", "failed", "fallback", "total", "rate"}
 
 
 def test_empty_log_all_rates_null():
@@ -319,3 +319,52 @@ def test_hour_slots_ordered_oldest_first():
     assert hours == sorted(hours)
     assert hours[0].startswith("2026-02-14T13")
     assert hours[-1].startswith("2026-02-15T12")
+
+
+# ---------------------------------------------------------------------------
+# poll_success_rate — fallback counting
+# ---------------------------------------------------------------------------
+
+
+def test_fallback_polls_counted():
+    """poll_end events with source=fallback increment the fallback counter."""
+    now = datetime(2026, 2, 15, 14, 30, 0, tzinfo=timezone.utc)
+    events = [
+        _make_event("poll_end", now - timedelta(minutes=20), posts_found=3, source="primary"),
+        _make_event("poll_end", now - timedelta(minutes=10), posts_found=1, source="fallback"),
+        _make_event("poll_end", now - timedelta(minutes=5), posts_found=2, source="fallback"),
+    ]
+    with (
+        patch("monitor_server.read_all_events", return_value=events),
+        patch("monitor_server.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = now
+        mock_dt.fromisoformat = datetime.fromisoformat
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        result = poll_success_rate()
+
+    slot_14 = next(s for s in result if s["hour"].startswith("2026-02-15T14"))
+    assert slot_14["success"] == 3
+    assert slot_14["fallback"] == 2
+    assert slot_14["failed"] == 0
+    assert slot_14["total"] == 3
+
+
+def test_no_fallback_when_primary_only():
+    """poll_end events with source=primary have zero fallback count."""
+    now = datetime(2026, 2, 15, 14, 30, 0, tzinfo=timezone.utc)
+    events = [
+        _make_event("poll_end", now - timedelta(minutes=10), posts_found=3, source="primary"),
+    ]
+    with (
+        patch("monitor_server.read_all_events", return_value=events),
+        patch("monitor_server.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = now
+        mock_dt.fromisoformat = datetime.fromisoformat
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        result = poll_success_rate()
+
+    slot_14 = next(s for s in result if s["hour"].startswith("2026-02-15T14"))
+    assert slot_14["fallback"] == 0
+    assert slot_14["success"] == 1

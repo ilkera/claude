@@ -8,6 +8,7 @@ import pytest
 
 from main import poll_cycle
 from models import Analysis
+from scraper import FetchResult
 
 
 @pytest.fixture
@@ -20,7 +21,7 @@ def sample_raw_posts():
 @pytest.fixture
 def mock_scraper(sample_raw_posts):
     scraper = AsyncMock()
-    scraper.fetch_posts.return_value = sample_raw_posts
+    scraper.fetch_posts.return_value = FetchResult(posts=sample_raw_posts, source="primary")
     return scraper
 
 
@@ -107,3 +108,24 @@ async def test_analysis_below_threshold(
     await poll_cycle(mock_scraper, parser, analyzer, mock_notifier, state_manager, event_logger)
 
     mock_notifier.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_source_propagated_to_events(
+    sample_raw_posts, parser, mock_analyzer, mock_notifier, state_manager, event_logger
+):
+    """The source field from FetchResult is included in poll_end events."""
+    scraper = AsyncMock()
+    scraper.fetch_posts.return_value = FetchResult(posts=sample_raw_posts, source="fallback")
+
+    await poll_cycle(scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger)
+
+    # Read back events and check poll_end has source=fallback
+    import json
+    events = []
+    with open(event_logger.filepath) as f:
+        for line in f:
+            events.append(json.loads(line.strip()))
+    poll_ends = [e for e in events if e["event_type"] == "poll_end"]
+    assert len(poll_ends) == 1
+    assert poll_ends[0]["source"] == "fallback"

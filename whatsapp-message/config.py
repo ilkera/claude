@@ -23,6 +23,10 @@ class Config:
     # Scraping
     scrape_url: str = os.getenv(
         "SCRAPE_URL",
+        "https://trumpstruth.org/",
+    )
+    fallback_scrape_url: str = os.getenv(
+        "FALLBACK_SCRAPE_URL",
         "https://rollcall.com/factbase/trump/topic/social",
     )
     poll_interval_seconds: int = int(os.getenv("POLL_INTERVAL_SECONDS", "420"))

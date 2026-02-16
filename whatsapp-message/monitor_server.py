@@ -73,6 +73,7 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
   <div class="stat"><div class="label">Polls (24h)</div><div class="value" id="pollCount">--</div></div>
   <div class="stat"><div class="label">Posts Found (24h)</div><div class="value" id="postsFound">--</div></div>
   <div class="stat"><div class="label">Notifications (24h)</div><div class="value" id="notifCount">--</div></div>
+  <div class="stat"><div class="label">Fallback (24h)</div><div class="value" id="fallbackCount">--</div></div>
   <div class="stat"><div class="label">Success Rate (24h)</div><div class="value" id="successRate">--</div></div>
 </div>
 <div id="chartContainer" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:16px">
@@ -95,7 +96,7 @@ function formatDuration(ms){
 }
 function eventDetails(e){
   switch(e.event_type){
-    case 'poll_end':return 'found:'+e.posts_found+' new:'+e.new_posts+' ('+e.duration_ms+'ms)';
+    case 'poll_end':return 'found:'+e.posts_found+' new:'+e.new_posts+' ('+e.duration_ms+'ms)'+(e.source==='fallback'?' [FALLBACK]':'');
     case 'notification_sent':return (e.topics||[]).join(', ')+' ['+((e.relevance_score||0).toFixed(2))+']';
     case 'notification_skipped':return e.reason||'';
     case 'error':return (e.error_type||'')+': '+(e.message||'');
@@ -120,6 +121,12 @@ function renderChart(data){
     const y=padT+chartH-barH;
     const color=d.rate===null?'#21262d':d.rate>=0.8?'#3fb950':d.rate>=0.5?'#d29922':'#f85149';
     html+=`<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${color}" rx="2"/>`;
+    // Fallback overlay (orange portion within the bar)
+    if(d.fallback>0&&d.total>0){
+      const fbRatio=d.fallback/d.total;
+      const fbH=barH*fbRatio;
+      html+=`<rect x="${x}" y="${padT+chartH-fbH}" width="${barW}" height="${fbH}" fill="#d29922" rx="2" opacity="0.8"/>`;
+    }
     // Rate value above bar
     if(d.rate!==null){
       html+=`<text x="${x+barW/2}" y="${y-4}" text-anchor="middle" fill="#c9d1d9" font-size="8">${Math.round(d.rate*100)}%</text>`;
@@ -176,6 +183,9 @@ async function refresh(){
     document.getElementById('pollCount').textContent=recent.filter(e=>e.event_type==='poll_end').length;
     document.getElementById('postsFound').textContent=recent.filter(e=>e.event_type==='poll_end').reduce((a,e)=>a+(e.posts_found||0),0);
     document.getElementById('notifCount').textContent=recent.filter(e=>e.event_type==='notification_sent').length;
+    // Fallback count
+    const totalFallback=pollData.reduce((a,d)=>a+(d.fallback||0),0);
+    document.getElementById('fallbackCount').textContent=totalFallback;
     // Success rate
     const totalSuccess=pollData.reduce((a,d)=>a+d.success,0);
     const totalPolls=pollData.reduce((a,d)=>a+d.total,0);
@@ -236,7 +246,7 @@ def poll_success_rate() -> list[dict]:
     buckets: dict[str, dict] = {}
     for h in hours:
         key = h.isoformat().replace("+00:00", "Z")
-        buckets[key] = {"hour": key, "success": 0, "failed": 0}
+        buckets[key] = {"hour": key, "success": 0, "failed": 0, "fallback": 0}
 
     cutoff = hours[0]
     for event in read_all_events():
@@ -256,6 +266,8 @@ def poll_success_rate() -> list[dict]:
         if key in buckets:
             if event_type == "poll_end":
                 buckets[key]["success"] += 1
+                if event.get("source") == "fallback":
+                    buckets[key]["fallback"] += 1
             else:
                 buckets[key]["failed"] += 1
 
@@ -269,6 +281,7 @@ def poll_success_rate() -> list[dict]:
             "hour": key,
             "success": b["success"],
             "failed": b["failed"],
+            "fallback": b["fallback"],
             "total": total,
             "rate": rate,
         })
