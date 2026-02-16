@@ -103,6 +103,8 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
   <div class="stat"><div class="label">Total Seen (24h)</div><div class="value" id="totalSeen">--</div></div>
   <div class="stat"><div class="label">Notifications (24h)</div><div class="value" id="notifCount">--</div></div>
   <div class="stat"><div class="label">Last Notification</div><div class="value" id="lastNotif">--</div></div>
+  <div class="stat"><div class="label">Economic (24h)</div><div class="value" id="economicCount">--</div></div>
+  <div class="stat"><div class="label">Avg Confidence</div><div class="value" id="avgConfidence">--</div></div>
   <div class="stat"><div class="label">Fallback (24h)</div><div class="value" id="fallbackCount">--</div></div>
   <div class="stat"><div class="label">Success Rate (24h)</div><div class="value" id="successRate">--</div></div>
 </div>
@@ -139,9 +141,14 @@ function eventSummary(e){
 function isExpandable(e){return e.event_type==='notification_sent'||e.event_type==='error';}
 function eventDetailPanel(e){
   if(e.event_type==='notification_sent'){
-    let html='<h4>Summary</h4><ul>';
-    (e.summary||[]).forEach(s=>{html+='<li>'+escHtml(s)+'</li>';});
-    html+='</ul>';
+    let html='<h4>Classification</h4>';
+    html+='<div class="meta-item">Type: <span>'+(e.is_economic?'Economic':'Non-Economic')+'</span></div>';
+    html+='<div class="meta-item">Category: <span>'+escHtml(e.primary_category||'--')+'</span></div>';
+    if(e.subcategory){html+='<div class="meta-item">Subcategory: <span>'+escHtml(e.subcategory)+'</span></div>';}
+    if(e.market_sentiment){html+='<div class="meta-item">Sentiment: <span>'+escHtml(e.market_sentiment)+'</span></div>';}
+    if(typeof e.confidence==='number'){html+='<div class="meta-item">Confidence: <span>'+Math.round(e.confidence*100)+'%</span></div>';}
+    html+='<h4>Summary</h4>';
+    html+='<p>'+escHtml(typeof e.summary==='string'?e.summary:(e.summary||[]).join('; '))+'</p>';
     if(e.original_posts&&e.original_posts.length>0){
       html+='<h4>Original Posts ('+e.original_posts.length+')</h4>';
       e.original_posts.forEach((p,i)=>{
@@ -257,6 +264,11 @@ async function refresh(){
     document.getElementById('totalSeen').textContent=status.total_seen||0;
     const notifs=recent.filter(e=>e.event_type==='notification_sent');
     document.getElementById('notifCount').textContent=notifs.length;
+    // Economic posts and avg confidence (24h)
+    const econCount=notifs.filter(e=>e.is_economic===true).length;
+    document.getElementById('economicCount').textContent=econCount;
+    const confs=notifs.filter(e=>typeof e.confidence==='number').map(e=>e.confidence);
+    document.getElementById('avgConfidence').textContent=confs.length>0?Math.round(confs.reduce((a,b)=>a+b,0)/confs.length*100)+'%':'--';
     const allNotifs=events.filter(e=>e.event_type==='notification_sent');
     const lastNotifEl=document.getElementById('lastNotif');
     if(allNotifs.length>0){const lt=new Date(allNotifs[0].timestamp);lastNotifEl.textContent=lt.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}else{lastNotifEl.textContent='--';}

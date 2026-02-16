@@ -32,6 +32,7 @@ async def poll_cycle(
     notifier: WhatsAppNotifier,
     state: StateManager,
     event_logger: EventLogger,
+    config: Config | None = None,
 ) -> None:
     logger.info("Starting poll cycle")
     event_logger.log("poll_start", url=scraper.config.scrape_url)
@@ -56,27 +57,42 @@ async def poll_cycle(
     state.mark_seen(new_posts)
 
     if analysis:
-        sid, formatted_message = notifier.send(analysis)
-        logger.info("Notification sent: %s", sid)
-        event_logger.log(
-            "notification_sent",
-            sid=sid,
-            topics=analysis.topics,
-            relevance_score=analysis.relevance_score,
-            summary=analysis.summary,
-            formatted_message=formatted_message,
-            original_posts=[
-                {
-                    "post_id": p.post_id,
-                    "platform": p.platform,
-                    "content": p.content,
-                    "timestamp": p.timestamp,
-                    "source_url": p.source_url,
-                }
-                for p in analysis.original_posts
-            ],
-            post_count=len(analysis.original_posts),
-        )
+        # Non-economic filtering
+        notify_non_economic = config.notify_non_economic if config else True
+        if not analysis.is_economic and not notify_non_economic:
+            logger.info("Non-economic post filtered, skipping notification")
+            event_logger.log(
+                "notification_skipped",
+                reason="non_economic_filtered",
+                primary_category=analysis.primary_category,
+            )
+        else:
+            sid, formatted_message = notifier.send(analysis)
+            logger.info("Notification sent: %s", sid)
+            event_logger.log(
+                "notification_sent",
+                sid=sid,
+                topics=analysis.topics,
+                relevance_score=analysis.relevance_score,
+                summary=analysis.summary,
+                formatted_message=formatted_message,
+                is_economic=analysis.is_economic,
+                primary_category=analysis.primary_category,
+                subcategory=analysis.subcategory,
+                market_sentiment=analysis.market_sentiment,
+                confidence=analysis.confidence,
+                original_posts=[
+                    {
+                        "post_id": p.post_id,
+                        "platform": p.platform,
+                        "content": p.content,
+                        "timestamp": p.timestamp,
+                        "source_url": p.source_url,
+                    }
+                    for p in analysis.original_posts
+                ],
+                post_count=len(analysis.original_posts),
+            )
     else:
         logger.info("Analysis below threshold or failed, skipping notification")
         event_logger.log("notification_skipped", reason="below_threshold")
@@ -119,7 +135,7 @@ async def main() -> None:
         while True:
             try:
                 await poll_cycle(
-                    scraper, parser, analyzer, notifier, state, event_logger
+                    scraper, parser, analyzer, notifier, state, event_logger, config
                 )
             except Exception:
                 logger.exception("Poll cycle failed")

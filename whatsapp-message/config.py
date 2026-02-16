@@ -38,6 +38,9 @@ class Config:
     # Filter
     min_relevance_score: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.3"))
 
+    # Classification
+    notify_non_economic: bool = os.getenv("NOTIFY_NON_ECONOMIC", "true").lower() == "true"
+
     # Monitoring
     events_file: str = os.getenv("EVENTS_FILE", "events_log.json")
     monitor_port: int = int(os.getenv("MONITOR_PORT", "8080"))
