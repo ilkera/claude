@@ -67,11 +67,13 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
 <body>
 <h1>Trump Social Feed Monitor</h1>
 <div class="status-bar">
-  <div class="status-indicator"><span class="dot" id="statusDot"></span><span id="statusText">Loading...</span></div>
   <div class="status-indicator"><span class="dot" id="processDot"></span><span id="processText">Process: --</span></div>
+  <div class="status-indicator"><span class="dot" id="statusDot"></span><span id="statusText">Loading...</span></div>
+</div>
+<div class="status-bar">
   <div class="stat"><div class="label">Uptime</div><div class="value" id="uptime">--</div></div>
   <div class="stat"><div class="label">Polls (24h)</div><div class="value" id="pollCount">--</div></div>
-  <div class="stat"><div class="label">Posts Found (24h)</div><div class="value" id="postsFound">--</div></div>
+  <div class="stat"><div class="label">New Posts (24h)</div><div class="value" id="postsFound">--</div></div>
   <div class="stat"><div class="label">Notifications (24h)</div><div class="value" id="notifCount">--</div></div>
   <div class="stat"><div class="label">Fallback (24h)</div><div class="value" id="fallbackCount">--</div></div>
   <div class="stat"><div class="label">Success Rate (24h)</div><div class="value" id="successRate">--</div></div>
@@ -147,7 +149,10 @@ async function refresh(){
     const pDot=document.getElementById('processDot');
     const pTxt=document.getElementById('processText');
     if(status.running){
-      pDot.className='dot green';pTxt.textContent='Process: Running (PID '+status.pid+')';
+      let procMsg='Process: Running (PID '+status.pid+')';
+      const starts=events.filter(e=>e.event_type==='service_start');
+      if(starts.length>0){const st=new Date(starts[0].timestamp);procMsg+=' | Started: '+st.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+      pDot.className='dot green';pTxt.textContent=procMsg;
     }else{
       pDot.className='dot red';pTxt.textContent='Process: Not Running';
     }
@@ -182,7 +187,7 @@ async function refresh(){
     // 24h stats
     const recent=events.filter(e=>new Date(e.timestamp).getTime()>h24);
     document.getElementById('pollCount').textContent=recent.filter(e=>e.event_type==='poll_end').length;
-    document.getElementById('postsFound').textContent=recent.filter(e=>e.event_type==='poll_end').reduce((a,e)=>a+(e.posts_found||0),0);
+    document.getElementById('postsFound').textContent=recent.filter(e=>e.event_type==='poll_end').reduce((a,e)=>a+(e.new_posts||0),0);
     document.getElementById('notifCount').textContent=recent.filter(e=>e.event_type==='notification_sent').length;
     // Fallback count
     const totalFallback=pollData.reduce((a,d)=>a+(d.fallback||0),0);
