@@ -90,6 +90,14 @@ async def main() -> None:
     event_logger = EventLogger(config.events_file)
 
     pid_file = config.events_file.replace(".json", ".pid")
+    if os.path.exists(pid_file):
+        try:
+            old_pid = int(open(pid_file).read().strip())
+            os.kill(old_pid, 0)
+            logger.error("Another instance is already running (PID %d). Exiting.", old_pid)
+            sys.exit(1)
+        except (OSError, ValueError):
+            pass  # process not running or invalid pid, safe to continue
     with open(pid_file, "w") as f:
         f.write(str(os.getpid()))
 
