@@ -77,7 +77,7 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
 </div>
 <div id="chartContainer" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:16px">
   <div style="font-size:0.85em;color:#8b949e;margin-bottom:8px">Poll Success Rate (24h)</div>
-  <svg id="successChart" width="100%" height="180" viewBox="0 0 720 180" preserveAspectRatio="none"></svg>
+  <svg id="successChart" width="100%" height="200" viewBox="0 0 960 200"></svg>
 </div>
 <div class="events" id="eventList"></div>
 <div class="refresh-note">Auto-refreshes every 30s</div>
@@ -105,24 +105,28 @@ function eventDetails(e){
 }
 function renderChart(data){
   const svg=document.getElementById('successChart');
-  const w=720,h=180,pad=25,barW=Math.floor((w-pad*2)/24)-2;
-  let html=`<rect x="0" y="0" width="${w}" height="${h}" fill="none"/>`;
-  // Y-axis labels
+  const w=960,h=200,padT=20,padB=20,padL=30,padR=10;
+  const chartH=h-padT-padB,barW=Math.floor((w-padL-padR)/24)-2;
+  let html='';
+  // Y-axis labels and grid
   for(let p of [0,50,100]){
-    const y=pad+(100-p)/100*(h-pad*2);
-    html+=`<text x="${pad-4}" y="${y+4}" text-anchor="end" fill="#484f58" font-size="10">${p}%</text>`;
-    html+=`<line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="#21262d" stroke-width="1"/>`;
+    const y=padT+(100-p)/100*chartH;
+    html+=`<text x="${padL-4}" y="${y+4}" text-anchor="end" fill="#484f58" font-size="10">${p}%</text>`;
+    html+=`<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="#21262d" stroke-width="1"/>`;
   }
   data.forEach((d,i)=>{
-    const x=pad+i*((w-pad*2)/24)+1;
-    const barH=d.rate!==null?d.rate*(h-pad*2):0;
-    const y=pad+(h-pad*2)-barH;
+    const x=padL+i*((w-padL-padR)/24)+1;
+    const barH=d.rate!==null?d.rate*chartH:0;
+    const y=padT+chartH-barH;
     const color=d.rate===null?'#21262d':d.rate>=0.8?'#3fb950':d.rate>=0.5?'#d29922':'#f85149';
     html+=`<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${color}" rx="2"/>`;
-    if(i%3===0){
-      const label=new Date(d.hour).toLocaleTimeString([],{hour:'2-digit',hour12:false});
-      html+=`<text x="${x+barW/2}" y="${h-2}" text-anchor="middle" fill="#484f58" font-size="9">${label}</text>`;
+    // Rate value above bar
+    if(d.rate!==null){
+      html+=`<text x="${x+barW/2}" y="${y-4}" text-anchor="middle" fill="#c9d1d9" font-size="8">${Math.round(d.rate*100)}%</text>`;
     }
+    // Hour label on x-axis
+    const label=new Date(d.hour).toLocaleTimeString([],{hour:'2-digit',hour12:false});
+    html+=`<text x="${x+barW/2}" y="${h-4}" text-anchor="middle" fill="#484f58" font-size="8">${label}</text>`;
   });
   svg.innerHTML=html;
 }
