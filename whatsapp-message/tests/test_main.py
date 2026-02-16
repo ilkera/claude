@@ -22,6 +22,7 @@ def sample_raw_posts():
 def mock_scraper(sample_raw_posts):
     scraper = AsyncMock()
     scraper.fetch_posts.return_value = FetchResult(posts=sample_raw_posts, source="primary")
+    scraper.config.scrape_url = "https://trumpstruth.org/"
     return scraper
 
 
@@ -93,6 +94,7 @@ async def test_no_new_posts(
 async def test_scraper_failure(parser, mock_analyzer, mock_notifier, state_manager, event_logger):
     scraper = AsyncMock()
     scraper.fetch_posts.side_effect = RuntimeError("Browser crashed")
+    scraper.config.scrape_url = "https://trumpstruth.org/"
 
     with pytest.raises(RuntimeError):
         await poll_cycle(scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger)
@@ -117,6 +119,7 @@ async def test_source_propagated_to_events(
     """The source field from FetchResult is included in poll_end events."""
     scraper = AsyncMock()
     scraper.fetch_posts.return_value = FetchResult(posts=sample_raw_posts, source="fallback")
+    scraper.config.scrape_url = "https://trumpstruth.org/"
 
     await poll_cycle(scraper, parser, mock_analyzer, mock_notifier, state_manager, event_logger)
 

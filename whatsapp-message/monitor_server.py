@@ -96,6 +96,7 @@ function formatDuration(ms){
 }
 function eventDetails(e){
   switch(e.event_type){
+    case 'poll_start':return e.url||'';
     case 'poll_end':return 'found:'+e.posts_found+' new:'+e.new_posts+' ('+e.duration_ms+'ms)'+(e.source==='fallback'?' [FALLBACK]':'');
     case 'notification_sent':return (e.topics||[]).join(', ')+' ['+((e.relevance_score||0).toFixed(2))+']';
     case 'notification_skipped':return e.reason||'';

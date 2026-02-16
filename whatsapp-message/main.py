@@ -34,7 +34,7 @@ async def poll_cycle(
     event_logger: EventLogger,
 ) -> None:
     logger.info("Starting poll cycle")
-    event_logger.log("poll_start")
+    event_logger.log("poll_start", url=scraper.config.scrape_url)
     t0 = time.monotonic()
 
     result = await scraper.fetch_posts()
