@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 EVENTS_FILE = os.getenv("EVENTS_FILE", "events_log.json")
 PID_FILE = EVENTS_FILE.replace(".json", ".pid")
+STATE_FILE = os.getenv("STATE_FILE", "seen_posts.json")
 MONITOR_PORT = int(os.getenv("MONITOR_PORT", "8080"))
 
 
@@ -74,7 +75,9 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
   <div class="stat"><div class="label">Uptime</div><div class="value" id="uptime">--</div></div>
   <div class="stat"><div class="label">Polls (24h)</div><div class="value" id="pollCount">--</div></div>
   <div class="stat"><div class="label">New Posts (24h)</div><div class="value" id="postsFound">--</div></div>
+  <div class="stat"><div class="label">Total Seen (24h)</div><div class="value" id="totalSeen">--</div></div>
   <div class="stat"><div class="label">Notifications (24h)</div><div class="value" id="notifCount">--</div></div>
+  <div class="stat"><div class="label">Last Notification</div><div class="value" id="lastNotif">--</div></div>
   <div class="stat"><div class="label">Fallback (24h)</div><div class="value" id="fallbackCount">--</div></div>
   <div class="stat"><div class="label">Success Rate (24h)</div><div class="value" id="successRate">--</div></div>
 </div>
@@ -189,7 +192,12 @@ async function refresh(){
     document.getElementById('pollCount').textContent=recent.filter(e=>e.event_type==='poll_end').length;
     const uniqueNewIds=new Set();recent.filter(e=>e.event_type==='poll_end').forEach(e=>(e.new_post_ids||[]).forEach(id=>uniqueNewIds.add(id)));
     document.getElementById('postsFound').textContent=uniqueNewIds.size;
-    document.getElementById('notifCount').textContent=recent.filter(e=>e.event_type==='notification_sent').length;
+    document.getElementById('totalSeen').textContent=status.total_seen||0;
+    const notifs=recent.filter(e=>e.event_type==='notification_sent');
+    document.getElementById('notifCount').textContent=notifs.length;
+    const allNotifs=events.filter(e=>e.event_type==='notification_sent');
+    const lastNotifEl=document.getElementById('lastNotif');
+    if(allNotifs.length>0){const lt=new Date(allNotifs[0].timestamp);lastNotifEl.textContent=lt.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}else{lastNotifEl.textContent='--';}
     // Fallback count
     const totalFallback=pollData.reduce((a,d)=>a+(d.fallback||0),0);
     document.getElementById('fallbackCount').textContent=totalFallback;
@@ -313,7 +321,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                         pid = int(f.read().strip())
                 except (ValueError, FileNotFoundError):
                     pass
-            data = {"running": running, "pid": pid}
+            total_seen = 0
+            try:
+                with open(STATE_FILE) as f:
+                    total_seen = len(json.loads(f.read()).get("seen_ids", []))
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+            data = {"running": running, "pid": pid, "total_seen": total_seen}
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
