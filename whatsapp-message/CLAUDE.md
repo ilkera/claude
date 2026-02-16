@@ -5,30 +5,33 @@
 A 24/7 Python service that polls Trump's social media posts, analyzes them with Claude AI, and sends WhatsApp notifications via Twilio.
 
 ```
-trumpstruth.org (HTML) -> Scraper (Playwright) -> Parser -> State Filter -> Analyzer (Claude) -> Notifier (Twilio WhatsApp)
-         |                      ↑ fallback
-         +-- rollcall.com (JSON API) --+
+trumpstruth.org (HTML) -> Scraper (Playwright) -> Parser -> State Filter -> Analyzer (Claude: classify+summarize) -> Notifier (Twilio WhatsApp)
+         |                      ↑ fallback                                       ↑ taxonomy
+         +-- rollcall.com (JSON API) --+                                   taxonomy.py
 ```
 
 ### Poll Cycle Flow
 1. **Scraper** fetches posts from trumpstruth.org (HTML parsing, primary) with rollcall.com Factbase API as fallback, using Playwright headless Chromium. Returns a `FetchResult(posts, source)` where source is `"primary"` or `"fallback"`.
 2. **Parser** converts raw JSON dicts into `Post` dataclasses, detects platform (Truth Social vs Twitter)
 3. **StateManager** filters out already-seen posts using SHA-256 post IDs persisted in `seen_posts.json`
-4. **PostAnalyzer** sends new posts to Claude API for summarization, topic tagging, and relevance scoring (0.0-1.0)
-5. **WhatsAppNotifier** formats the analysis and sends via Twilio if relevance exceeds threshold
-6. Loop sleeps `POLL_INTERVAL_SECONDS` (default 420s / 7min) and repeats
+4. **PostAnalyzer** sends new posts to Claude API for combined classification + summarization in one call. Classifies as economic (10 categories with subcategories, market sentiment) or non-economic (9 categories). Returns `Analysis` with `is_economic`, `primary_category`, `subcategory`, `market_sentiment`, `confidence`, plus summary, topics, and relevance score (0.0-1.0). Taxonomy injected from `taxonomy.py`.
+5. **Non-economic filter**: If `NOTIFY_NON_ECONOMIC=false`, non-economic posts are logged as skipped and not sent.
+6. **WhatsAppNotifier** formats the analysis with category headers (economic: sentiment emoji + `[Category → Subcategory]`, non-economic: `📌 [Category]`) and sends via Twilio if relevance exceeds threshold
+7. Loop sleeps `POLL_INTERVAL_SECONDS` (default 420s / 7min) and repeats
 
 ## Key Components
 
 | File | Responsibility |
 |---|---|
-| `main.py` | Async polling loop, logging setup, graceful shutdown |
+| `taxonomy.py` | Economic (10) and non-economic (9) category definitions, `get_taxonomy_text()` for prompt injection |
+| `classify_post.py` | Standalone CLI for single-post classification (`python classify_post.py "text"`) |
+| `main.py` | Async polling loop, non-economic filtering, logging setup, graceful shutdown |
 | `scraper.py` | Playwright browser management, HTML parsing (trumpstruth.org) + JSON API fallback (rollcall.com) |
 | `parser.py` | JSON-to-Post conversion, platform detection, timestamp parsing |
-| `analyzer.py` | Claude API integration, JSON response parsing, relevance filtering |
-| `notifier.py` | Twilio WhatsApp message formatting and sending |
+| `analyzer.py` | Claude API integration, combined classify+summarize prompt, JSON response parsing, relevance filtering |
+| `notifier.py` | Twilio WhatsApp message formatting (category headers, sentiment emoji) and sending |
 | `state.py` | JSON-backed seen-post tracking, 5000 ID cap to prevent unbounded growth |
-| `models.py` | `Post` and `Analysis` dataclasses |
+| `models.py` | `Post` and `Analysis` dataclasses (`Analysis` includes classification fields: `is_economic`, `primary_category`, `subcategory`, `market_sentiment`, `confidence`) |
 | `config.py` | `.env` loading via python-dotenv, all configuration in one place |
 
 ## Configuration
@@ -40,6 +43,7 @@ All config loaded from `.env` (see `.env.example`). Key settings:
 - `FALLBACK_SCRAPE_URL` (default `https://rollcall.com/factbase/trump/topic/social`) - fallback source
 - `POLL_INTERVAL_SECONDS` (default 420) - polling frequency
 - `MIN_RELEVANCE_SCORE` (default 0.3) - skip low-relevance posts
+- `NOTIFY_NON_ECONOMIC` (default `true`) - set `false` to skip WhatsApp notifications for non-economic posts
 
 ## Testing
 
@@ -47,7 +51,7 @@ All config loaded from `.env` (see `.env.example`). Key settings:
 python -m pytest tests/ -v
 ```
 
-47 tests covering all modules. External services (Claude API, Twilio, Playwright) are mocked. Test fixtures in `tests/fixtures/`.
+60 tests covering all modules including classification. External services (Claude API, Twilio, Playwright) are mocked. Test fixtures in `tests/fixtures/`.
 
 ## Running
 
@@ -82,4 +86,4 @@ An independent monitoring dashboard runs as a separate process from the main ser
 python monitor_server.py   # open http://localhost:8080
 ```
 
-The dashboard shows service status (Online/Degraded/Down/Stopped), uptime, 24h stats (including fallback count), and a scrollable event list. Poll events from the fallback source are tagged `[FALLBACK]` in the event list, and the success rate chart shows fallback polls as an orange overlay. It auto-refreshes every 30 seconds and works even when the main service is stopped.
+The dashboard shows service status (Online/Degraded/Down/Stopped), uptime, 24h stats (including fallback count, economic post count, avg confidence), and a scrollable event list. Notification events expand to show classification details (category, subcategory, sentiment, confidence). Poll events from the fallback source are tagged `[FALLBACK]` in the event list, and the success rate chart shows fallback polls as an orange overlay. It auto-refreshes every 30 seconds and works even when the main service is stopped.
