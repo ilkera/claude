@@ -36,9 +36,11 @@ def test_correct_params(config, analysis):
 
         notifier = WhatsAppNotifier(config)
         notifier.client = mock_client
-        sid = notifier.send(analysis)
+        sid, body = notifier.send(analysis)
 
     assert sid == "SM123"
+    assert isinstance(body, str)
+    assert len(body) > 0
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["from_"] == config.twilio_whatsapp_from
     assert call_kwargs["to"] == config.whatsapp_to

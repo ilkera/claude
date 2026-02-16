@@ -56,7 +56,7 @@ async def poll_cycle(
     state.mark_seen(new_posts)
 
     if analysis:
-        sid = notifier.send(analysis)
+        sid, formatted_message = notifier.send(analysis)
         logger.info("Notification sent: %s", sid)
         event_logger.log(
             "notification_sent",
@@ -64,6 +64,18 @@ async def poll_cycle(
             topics=analysis.topics,
             relevance_score=analysis.relevance_score,
             summary=analysis.summary,
+            formatted_message=formatted_message,
+            original_posts=[
+                {
+                    "post_id": p.post_id,
+                    "platform": p.platform,
+                    "content": p.content,
+                    "timestamp": p.timestamp,
+                    "source_url": p.source_url,
+                }
+                for p in analysis.original_posts
+            ],
+            post_count=len(analysis.original_posts),
         )
     else:
         logger.info("Analysis below threshold or failed, skipping notification")

@@ -74,6 +74,20 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
 .day-header .count{color:#8b949e;font-weight:normal;font-size:0.85em}
 .day-events{display:block}
 .day-events.collapsed{display:none}
+.event-expandable{cursor:pointer}
+.event-expandable:hover{background:#1c2128}
+.event-expand-icon{color:#8b949e;font-size:0.8em;margin-right:4px}
+.event-detail{display:none;padding:10px 14px 14px 50px;border-bottom:1px solid #21262d;
+  background:#161b22;font-size:0.8em;line-height:1.6}
+.event-detail.open{display:block}
+.event-detail h4{color:#58a6ff;font-size:0.9em;margin:8px 0 4px;font-weight:bold}
+.event-detail h4:first-child{margin-top:0}
+.event-detail pre{background:#0d1117;border:1px solid #30363d;border-radius:4px;
+  padding:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;color:#c9d1d9;
+  font-size:0.95em;max-height:200px;overflow-y:auto}
+.event-detail .meta-item{color:#8b949e;margin:2px 0}
+.event-detail .meta-item span{color:#c9d1d9}
+.event-detail .post-block{border-left:2px solid #30363d;padding-left:10px;margin:6px 0}
 </style>
 </head>
 <body>
@@ -110,16 +124,53 @@ function formatDuration(ms){
   if(h>0)return h+'h '+m%60+'m';
   return m+'m '+s%60+'s';
 }
-function eventDetails(e){
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function eventSummary(e){
   switch(e.event_type){
     case 'poll_start':return e.url||'';
     case 'poll_end':return 'found:'+e.posts_found+' new:'+e.new_posts+' ('+e.duration_ms+'ms)'+(e.source==='fallback'?' [FALLBACK]':'');
-    case 'notification_sent':return (e.topics||[]).join(', ')+' ['+((e.relevance_score||0).toFixed(2))+']';
+    case 'notification_sent':return (e.topics||[]).join(', ')+' ['+((e.relevance_score||0).toFixed(2))+'] '+(e.post_count?e.post_count+' post(s)':'');
     case 'notification_skipped':return e.reason||'';
     case 'error':return (e.error_type||'')+': '+(e.message||'');
     case 'service_stop':return e.reason||'';
     default:return '';
   }
+}
+function isExpandable(e){return e.event_type==='notification_sent'||e.event_type==='error';}
+function eventDetailPanel(e){
+  if(e.event_type==='notification_sent'){
+    let html='<h4>Summary</h4><ul>';
+    (e.summary||[]).forEach(s=>{html+='<li>'+escHtml(s)+'</li>';});
+    html+='</ul>';
+    if(e.original_posts&&e.original_posts.length>0){
+      html+='<h4>Original Posts ('+e.original_posts.length+')</h4>';
+      e.original_posts.forEach((p,i)=>{
+        html+='<div class="post-block">';
+        html+='<div class="meta-item">Platform: <span>'+escHtml(p.platform)+'</span></div>';
+        html+='<div class="meta-item">Timestamp: <span>'+escHtml(p.timestamp)+'</span></div>';
+        html+='<div class="meta-item">ID: <span>'+escHtml((p.post_id||'').substring(0,16))+'...</span></div>';
+        if(p.source_url){html+='<div class="meta-item">URL: <span>'+escHtml(p.source_url)+'</span></div>';}
+        html+='<pre>'+escHtml(p.content)+'</pre>';
+        html+='</div>';
+      });
+    }
+    if(e.formatted_message){
+      html+='<h4>Sent Message</h4><pre>'+escHtml(e.formatted_message)+'</pre>';
+    }
+    html+='<h4>Metadata</h4>';
+    html+='<div class="meta-item">SID: <span>'+escHtml(e.sid||'--')+'</span></div>';
+    html+='<div class="meta-item">Relevance: <span>'+((e.relevance_score||0)*100).toFixed(0)+'%</span></div>';
+    html+='<div class="meta-item">Topics: <span>'+escHtml((e.topics||[]).join(', '))+'</span></div>';
+    return html;
+  }
+  if(e.event_type==='error'){
+    let html='<h4>Error Details</h4>';
+    html+='<div class="meta-item">Type: <span style="color:#f85149">'+escHtml(e.error_type||'Unknown')+'</span></div>';
+    html+='<div class="meta-item">Message: <span>'+escHtml(e.message||'--')+'</span></div>';
+    html+='<div class="meta-item">Source: <span>'+escHtml(e.source||'--')+'</span></div>';
+    return html;
+  }
+  return '';
 }
 function renderChart(data){
   const svg=document.getElementById('successChart');
@@ -240,11 +291,14 @@ async function refresh(){
       </div>`;
       html+=`<div class="day-events${isToday?'':' collapsed'}">`;
       evts.forEach(e=>{
-        html+=`<div class="event">
-          <span class="time">${formatTime(e.timestamp)}</span>
+        const expandable=isExpandable(e);
+        const eid='evt-'+Math.random().toString(36).substr(2,9);
+        html+=`<div class="event${expandable?' event-expandable':''}"${expandable?` onclick="var d=document.getElementById('${eid}');d.classList.toggle('open');this.querySelector('.event-expand-icon').textContent=d.classList.contains('open')?'\\u25be':'\\u25b8'"`:''}>
+          <span class="time">${expandable?'<span class=\\'event-expand-icon\\'>\\u25b8</span>':''}${formatTime(e.timestamp)}</span>
           <span class="type type-${e.event_type}">${e.event_type}</span>
-          <span class="details">${eventDetails(e)}</span>
+          <span class="details">${eventSummary(e)}</span>
         </div>`;
+        if(expandable){html+=`<div class="event-detail" id="${eid}">${eventDetailPanel(e)}</div>`;}
       });
       html+=`</div>`;
     });

@@ -40,7 +40,7 @@ def mock_analyzer():
 @pytest.fixture
 def mock_notifier():
     notifier = MagicMock()
-    notifier.send.return_value = "SM123"
+    notifier.send.return_value = ("SM123", "formatted message body")
     return notifier
 
 

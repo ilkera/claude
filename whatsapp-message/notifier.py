@@ -19,7 +19,7 @@ class WhatsAppNotifier:
         self.config = config
         self.client = Client(config.twilio_account_sid, config.twilio_auth_token)
 
-    def send(self, analysis: Analysis) -> str:
+    def send(self, analysis: Analysis) -> tuple[str, str]:
         body = self._format_message(analysis)
         message = self.client.messages.create(
             from_=self.config.twilio_whatsapp_from,
@@ -27,7 +27,7 @@ class WhatsAppNotifier:
             body=body,
         )
         logger.info("WhatsApp message sent: %s", message.sid)
-        return message.sid
+        return message.sid, body
 
     def _format_message(self, analysis: Analysis) -> str:
         now = datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M ET")
