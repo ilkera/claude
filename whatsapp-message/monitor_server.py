@@ -14,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
+from classify_post import classify
+
 EVENTS_FILE = os.getenv("EVENTS_FILE", "events_log.json")
 PID_FILE = EVENTS_FILE.replace(".json", ".pid")
 STATE_FILE = os.getenv("STATE_FILE", "seen_posts.json")
@@ -88,10 +90,33 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
 .event-detail .meta-item{color:#8b949e;margin:2px 0}
 .event-detail .meta-item span{color:#c9d1d9}
 .event-detail .post-block{border-left:2px solid #30363d;padding-left:10px;margin:6px 0}
+.tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid #30363d}
+.tab-btn{background:none;border:none;color:#8b949e;font-family:'Courier New',monospace;
+  font-size:0.95em;padding:10px 20px;cursor:pointer;border-bottom:2px solid transparent}
+.tab-btn:hover{color:#c9d1d9}
+.tab-btn.active{color:#58a6ff;border-bottom-color:#58a6ff}
+.classify-panel textarea{width:100%;min-height:160px;background:#161b22;color:#c9d1d9;
+  border:1px solid #30363d;border-radius:8px;padding:12px;font-family:'Courier New',monospace;
+  font-size:0.9em;resize:vertical}
+.classify-panel textarea:focus{outline:none;border-color:#58a6ff}
+.classify-btn{background:#161b22;color:#58a6ff;border:1px solid #58a6ff;border-radius:6px;
+  padding:10px 24px;font-family:'Courier New',monospace;font-size:0.9em;cursor:pointer;
+  margin-top:12px}
+.classify-btn:hover{background:#58a6ff;color:#0d1117}
+.classify-btn:disabled{opacity:0.5;cursor:not-allowed}
+.classify-result{margin-top:16px}
+.badge{display:inline-block;padding:4px 12px;border-radius:4px;font-size:0.85em;font-weight:bold;margin-bottom:8px}
+.badge.success{background:#1a3a2a;color:#3fb950;border:1px solid #3fb950}
+.badge.failure{background:#3a1a1a;color:#f85149;border:1px solid #f85149}
 </style>
 </head>
 <body>
 <h1>Trump Social Feed Monitor</h1>
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+  <button class="tab-btn" onclick="switchTab('classify')">Classify</button>
+</div>
+<div id="tab-dashboard">
 <div class="status-bar">
   <div class="status-indicator"><span class="dot" id="processDot"></span><span id="processText">Process: --</span></div>
   <div class="status-indicator"><span class="dot" id="statusDot"></span><span id="statusText">Loading...</span></div>
@@ -114,7 +139,39 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
 </div>
 <div class="events" id="eventList"></div>
 <div class="refresh-note">Auto-refreshes every 30s</div>
+</div>
+<div id="tab-classify" style="display:none">
+<div class="classify-panel">
+  <textarea id="postText" placeholder="Paste a Trump post to classify..." rows="8"></textarea>
+  <button class="classify-btn" id="classifyBtn" onclick="classifyPost()">Classify</button>
+  <div class="classify-result" id="classifyResult"></div>
+</div>
+</div>
 <script>
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>{if(b.textContent.toLowerCase()===name)b.classList.add('active');});
+  document.getElementById('tab-dashboard').style.display=name==='dashboard'?'block':'none';
+  document.getElementById('tab-classify').style.display=name==='classify'?'block':'none';
+}
+async function classifyPost(){
+  const text=document.getElementById('postText').value.trim();
+  const btn=document.getElementById('classifyBtn');
+  const result=document.getElementById('classifyResult');
+  if(!text){result.innerHTML='<span class="badge failure">Failure</span><pre>Error: Post text cannot be empty</pre>';return;}
+  btn.disabled=true;btn.textContent='Classifying...';result.innerHTML='';
+  try{
+    const r=await fetch('/api/classify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_text:text})});
+    const data=await r.json();
+    if(data.status==='success'){
+      result.innerHTML='<span class="badge success">Success</span><pre>'+escHtml(JSON.stringify(data.result,null,2))+'</pre>';
+    }else{
+      result.innerHTML='<span class="badge failure">Failure</span><pre>'+escHtml(data.error)+'</pre>';
+    }
+  }catch(err){
+    result.innerHTML='<span class="badge failure">Failure</span><pre>'+escHtml(String(err))+'</pre>';
+  }finally{btn.disabled=false;btn.textContent='Classify';}
+}
 function formatTime(iso){
   const d=new Date(iso);
   return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -448,6 +505,29 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(events).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+
+        if parsed.path == "/api/classify":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                payload = json.loads(body)
+                post_text = payload.get("post_text", "").strip()
+                if not post_text:
+                    raise ValueError("Post text cannot be empty")
+                result = classify(post_text)
+                response = {"status": "success", "result": result}
+            except Exception as e:
+                response = {"status": "failure", "error": str(e)}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode())
         else:
             self.send_response(404)
             self.end_headers()

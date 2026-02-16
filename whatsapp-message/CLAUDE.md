@@ -77,7 +77,7 @@ An independent monitoring dashboard runs as a separate process from the main ser
 | File | Responsibility |
 |---|---|
 | `event_logger.py` | JSONL event writer, appends to `events_log.json`, auto-rotates at 10,000 lines |
-| `monitor_server.py` | Stdlib HTTP server on port 8080, serves HTML dashboard + `/api/events` JSON endpoint |
+| `monitor_server.py` | Stdlib HTTP server on port 8080, serves tabbed HTML dashboard + `/api/events` JSON endpoint + `/api/classify` POST endpoint |
 
 **Events logged:** `service_start`, `service_stop`, `poll_start`, `poll_end`, `notification_sent`, `notification_skipped`, `error`
 
@@ -86,4 +86,7 @@ An independent monitoring dashboard runs as a separate process from the main ser
 python monitor_server.py   # open http://localhost:8080
 ```
 
-The dashboard shows service status (Online/Degraded/Down/Stopped), uptime, 24h stats (including fallback count, economic post count, avg confidence), and a scrollable event list. Notification events expand to show classification details (category, subcategory, sentiment, confidence). Poll events from the fallback source are tagged `[FALLBACK]` in the event list, and the success rate chart shows fallback polls as an orange overlay. It auto-refreshes every 30 seconds and works even when the main service is stopped.
+The dashboard has two tabs:
+
+- **Dashboard tab**: Service status (Online/Degraded/Down/Stopped), uptime, 24h stats (including fallback count, economic post count, avg confidence), and a scrollable event list. Notification events expand to show classification details (category, subcategory, sentiment, confidence). Poll events from the fallback source are tagged `[FALLBACK]` in the event list, and the success rate chart shows fallback polls as an orange overlay. Auto-refreshes every 30 seconds and works even when the main service is stopped.
+- **Classify tab**: Interactive classification debug panel. Paste a post into the textarea, click "Classify", and see the full classification JSON result with a Success/Failure badge. Calls `POST /api/classify` which uses `classify_post.classify()` under the hood. Useful for quick manual testing of the classifier without the CLI.
