@@ -63,6 +63,14 @@ h1{font-size:1.4em;margin-bottom:16px;color:#58a6ff}
 .type-notification_sent{color:#d2a8ff}.type-notification_skipped{color:#8b949e}
 .type-error{color:#f85149}
 .refresh-note{text-align:center;color:#484f58;font-size:0.75em;margin-top:8px}
+.day-header{padding:10px 14px;background:#1c2128;border-bottom:1px solid #30363d;
+  cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+  font-size:0.85em;font-weight:bold;color:#58a6ff;user-select:none}
+.day-header:hover{background:#22272e}
+.day-header .chevron{color:#8b949e;font-size:0.9em;margin-right:4px}
+.day-header .count{color:#8b949e;font-weight:normal;font-size:0.85em}
+.day-events{display:block}
+.day-events.collapsed{display:none}
 </style>
 </head>
 <body>
@@ -207,13 +215,37 @@ async function refresh(){
     const srEl=document.getElementById('successRate');
     srEl.textContent=totalPolls>0?Math.round(totalSuccess/totalPolls*100)+'%':'--';
     renderChart(pollData);
-    // Event list
+    // Event list grouped by day
     const list=document.getElementById('eventList');
-    list.innerHTML=events.slice(0,200).map(e=>`<div class="event">
-      <span class="time">${formatTime(e.timestamp)}</span>
-      <span class="type type-${e.event_type}">${e.event_type}</span>
-      <span class="details">${eventDetails(e)}</span>
-    </div>`).join('');
+    const sliced=events.slice(0,200);
+    const groups={};const groupOrder=[];
+    const todayStr=new Date().toLocaleDateString([],{year:'numeric',month:'short',day:'numeric'});
+    sliced.forEach(e=>{
+      const d=new Date(e.timestamp);
+      const dayKey=d.toLocaleDateString([],{year:'numeric',month:'short',day:'numeric'});
+      if(!groups[dayKey]){groups[dayKey]=[];groupOrder.push(dayKey);}
+      groups[dayKey].push(e);
+    });
+    let html='';
+    groupOrder.forEach(day=>{
+      const evts=groups[day];
+      const isToday=day===todayStr;
+      const label=isToday?day+' (Today)':day;
+      html+=`<div class="day-header" onclick="this.nextElementSibling.classList.toggle('collapsed');this.querySelector('.chevron').textContent=this.nextElementSibling.classList.contains('collapsed')?'\\u25b8':'\\u25be'">
+        <span><span class="chevron">${isToday?'\\u25be':'\\u25b8'}</span> ${label}</span>
+        <span class="count">${evts.length} event${evts.length!==1?'s':''}</span>
+      </div>`;
+      html+=`<div class="day-events${isToday?'':' collapsed'}">`;
+      evts.forEach(e=>{
+        html+=`<div class="event">
+          <span class="time">${formatTime(e.timestamp)}</span>
+          <span class="type type-${e.event_type}">${e.event_type}</span>
+          <span class="details">${eventDetails(e)}</span>
+        </div>`;
+      });
+      html+=`</div>`;
+    });
+    list.innerHTML=html;
   }catch(err){console.error('Refresh failed',err);}
 }
 refresh();
