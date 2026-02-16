@@ -5,11 +5,13 @@
 A 24/7 Python service that polls Trump's social media posts, analyzes them with Claude AI, and sends WhatsApp notifications via Twilio.
 
 ```
-Factbase JSON API -> Scraper (Playwright) -> Parser -> State Filter -> Analyzer (Claude) -> Notifier (Twilio WhatsApp)
+trumpstruth.org (HTML) -> Scraper (Playwright) -> Parser -> State Filter -> Analyzer (Claude) -> Notifier (Twilio WhatsApp)
+         |                      ↑ fallback
+         +-- rollcall.com (JSON API) --+
 ```
 
 ### Poll Cycle Flow
-1. **Scraper** fetches posts from Factbase REST API (`/wp-json/factbase/v1/twitter`) using Playwright headless Chromium
+1. **Scraper** fetches posts from trumpstruth.org (HTML parsing, primary) with rollcall.com Factbase API as fallback, using Playwright headless Chromium. Returns a `FetchResult(posts, source)` where source is `"primary"` or `"fallback"`.
 2. **Parser** converts raw JSON dicts into `Post` dataclasses, detects platform (Truth Social vs Twitter)
 3. **StateManager** filters out already-seen posts using SHA-256 post IDs persisted in `seen_posts.json`
 4. **PostAnalyzer** sends new posts to Claude API for summarization, topic tagging, and relevance scoring (0.0-1.0)
@@ -21,7 +23,7 @@ Factbase JSON API -> Scraper (Playwright) -> Parser -> State Filter -> Analyzer 
 | File | Responsibility |
 |---|---|
 | `main.py` | Async polling loop, logging setup, graceful shutdown |
-| `scraper.py` | Playwright browser management, Factbase API fetching |
+| `scraper.py` | Playwright browser management, HTML parsing (trumpstruth.org) + JSON API fallback (rollcall.com) |
 | `parser.py` | JSON-to-Post conversion, platform detection, timestamp parsing |
 | `analyzer.py` | Claude API integration, JSON response parsing, relevance filtering |
 | `notifier.py` | Twilio WhatsApp message formatting and sending |
@@ -34,6 +36,8 @@ Factbase JSON API -> Scraper (Playwright) -> Parser -> State Filter -> Analyzer 
 All config loaded from `.env` (see `.env.example`). Key settings:
 - `ANTHROPIC_API_KEY` / `CLAUDE_MODEL` - Claude AI for post analysis
 - `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_FROM` / `WHATSAPP_TO` - Twilio WhatsApp
+- `SCRAPE_URL` (default `https://trumpstruth.org/`) - primary source
+- `FALLBACK_SCRAPE_URL` (default `https://rollcall.com/factbase/trump/topic/social`) - fallback source
 - `POLL_INTERVAL_SECONDS` (default 420) - polling frequency
 - `MIN_RELEVANCE_SCORE` (default 0.3) - skip low-relevance posts
 
@@ -43,7 +47,7 @@ All config loaded from `.env` (see `.env.example`). Key settings:
 python -m pytest tests/ -v
 ```
 
-26 tests covering all modules. External services (Claude API, Twilio, Playwright) are mocked. Test fixtures in `tests/fixtures/`.
+47 tests covering all modules. External services (Claude API, Twilio, Playwright) are mocked. Test fixtures in `tests/fixtures/`.
 
 ## Running
 
@@ -56,7 +60,8 @@ python main.py
 
 ## Important Details
 
-- **API vs HTML scraping**: The site is JS-rendered, but exposes a REST API at `/wp-json/factbase/v1/twitter?sort=date&sort_order=desc&format=json`. We fetch this directly via Playwright rather than parsing rendered HTML.
+- **Primary source (trumpstruth.org)**: Server-rendered HTML archive. Posts are in `.status` divs with `.status__content` for text, `.status-info__meta` for timestamps (human-readable like "February 14, 2026, 10:05 AM"), and `.status-header__right a` for links. Uses `domcontentloaded` + 5s wait.
+- **Fallback source (rollcall.com)**: Factbase JSON API at `/wp-json/factbase/v1/twitter?sort=date&sort_order=desc&format=json`. Used automatically when the primary source fails. Set `FALLBACK_SCRAPE_URL` to empty to disable fallback.
 - **State persistence**: `seen_posts.json` tracks post IDs across restarts. Capped at 5000 entries.
 - **Error resilience**: Each poll cycle is wrapped in try/except - failures are logged and the loop continues.
 - **WhatsApp sandbox**: Twilio sandbox requires recipients to send a join code to `+14155238886` before receiving messages.
@@ -77,4 +82,4 @@ An independent monitoring dashboard runs as a separate process from the main ser
 python monitor_server.py   # open http://localhost:8080
 ```
 
-The dashboard shows service status (Online/Degraded/Down/Stopped), uptime, 24h stats, and a scrollable event list. It auto-refreshes every 30 seconds and works even when the main service is stopped.
+The dashboard shows service status (Online/Degraded/Down/Stopped), uptime, 24h stats (including fallback count), and a scrollable event list. Poll events from the fallback source are tagged `[FALLBACK]` in the event list, and the success rate chart shows fallback polls as an orange overlay. It auto-refreshes every 30 seconds and works even when the main service is stopped.
