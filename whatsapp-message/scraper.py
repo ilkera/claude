@@ -40,10 +40,26 @@ class Scraper:
             await self._playwright.stop()
         logger.info("Browser closed")
 
+    async def _ensure_browser(self) -> None:
+        """Relaunch the browser if the connection was lost."""
+        if self._browser and self._browser.is_connected():
+            return
+        logger.warning("Browser connection lost, relaunching")
+        try:
+            if self._browser:
+                await self._browser.close()
+        except Exception:
+            pass
+        if not self._playwright:
+            self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.launch(headless=True)
+        logger.info("Browser relaunched")
+
     async def fetch_posts(self) -> FetchResult:
         """Fetch posts from primary source, falling back to secondary on failure."""
-        if not self._browser:
+        if not self._browser and not self._playwright:
             raise RuntimeError("Browser not started. Call start() first.")
+        await self._ensure_browser()
 
         primary_url = self.config.scrape_url
         fallback_url = self.config.fallback_scrape_url
