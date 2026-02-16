@@ -187,7 +187,8 @@ async function refresh(){
     // 24h stats
     const recent=events.filter(e=>new Date(e.timestamp).getTime()>h24);
     document.getElementById('pollCount').textContent=recent.filter(e=>e.event_type==='poll_end').length;
-    document.getElementById('postsFound').textContent=recent.filter(e=>e.event_type==='poll_end').reduce((a,e)=>a+(e.new_posts||0),0);
+    const uniqueNewIds=new Set();recent.filter(e=>e.event_type==='poll_end').forEach(e=>(e.new_post_ids||[]).forEach(id=>uniqueNewIds.add(id)));
+    document.getElementById('postsFound').textContent=uniqueNewIds.size;
     document.getElementById('notifCount').textContent=recent.filter(e=>e.event_type==='notification_sent').length;
     // Fallback count
     const totalFallback=pollData.reduce((a,d)=>a+(d.fallback||0),0);

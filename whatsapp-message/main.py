@@ -46,7 +46,7 @@ async def poll_cycle(
         logger.info("No new posts found")
         duration_ms = int((time.monotonic() - t0) * 1000)
         event_logger.log(
-            "poll_end", posts_found=len(posts), new_posts=0, duration_ms=duration_ms, source=source
+            "poll_end", posts_found=len(posts), new_posts=0, new_post_ids=[], duration_ms=duration_ms, source=source
         )
         event_logger.log("notification_skipped", reason="no_new_posts")
         return
@@ -74,6 +74,7 @@ async def poll_cycle(
         "poll_end",
         posts_found=len(posts),
         new_posts=len(new_posts),
+        new_post_ids=[p.post_id for p in new_posts],
         duration_ms=duration_ms,
         source=source,
     )
