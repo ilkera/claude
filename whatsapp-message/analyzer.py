@@ -7,7 +7,7 @@ import anthropic
 
 from config import Config
 from models import Analysis, Post
-from taxonomy import get_taxonomy_text
+from taxonomy import get_taxonomy_text, validate_classification
 
 logger = logging.getLogger(__name__)
 
@@ -74,22 +74,41 @@ class PostAnalyzer:
                 logger.info("Relevance %.2f below threshold, skipping", relevance)
                 return None
 
-            is_economic = data.get("is_economic")
+            # Parse raw values from LLM
+            is_economic = data.get("is_economic", False)
+            primary_category = data.get("primary_category", "")
             subcategory = data.get("subcategory")
+            market_sentiment = data.get("market_sentiment")
+            confidence = data.get("confidence", 0.5)
+
+            # Validate and correct classification
+            is_valid, corrected, corrections = validate_classification(
+                is_economic=is_economic,
+                primary_category=primary_category,
+                subcategory=subcategory,
+                market_sentiment=market_sentiment,
+                confidence=confidence,
+                relevance_score=relevance,
+            )
+
+            # Log all corrections
+            for correction in corrections:
+                logger.info("Classification correction: %s", correction)
+
             if is_economic and subcategory is None:
                 logger.warning("Economic post has null subcategory: %s", data.get("primary_category"))
 
             return Analysis(
                 summary=data["summary"],
                 topics=data["topics"],
-                relevance_score=relevance,
+                relevance_score=corrected["relevance_score"],
                 original_posts=posts,
-                is_economic=is_economic,
-                primary_category=data.get("primary_category"),
-                subcategory=subcategory,
+                is_economic=corrected["is_economic"],
+                primary_category=corrected["primary_category"],
+                subcategory=corrected["subcategory"],
                 secondary_category=data.get("secondary_category"),
-                market_sentiment=data.get("market_sentiment"),
-                confidence=data.get("confidence"),
+                market_sentiment=corrected["market_sentiment"],
+                confidence=corrected["confidence"],
             )
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.error("Failed to parse Claude response: %s", e)
